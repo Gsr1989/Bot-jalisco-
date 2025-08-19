@@ -18,24 +18,8 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
 OUTPUT_DIR = "documentos"
-PLANTILLA_PDF = "jalisco1.pdf"
-PLANTILLA_BUENO = "jalisco.pdf"
-
-# Coordenadas Jalisco
-coords_jalisco = {
-    "folio": (960, 391, 14, (0, 0, 0)),
-    "marca": (330, 361, 14, (0, 0, 0)),
-    "serie": (960, 361, 14, (0, 0, 0)),
-    "linea": (330, 391, 14, (0, 0, 0)),
-    "motor": (300, 260, 14, (0, 0, 0)),
-    "anio": (330, 421, 14, (0, 0, 0)),
-    "color": (330, 451, 14, (0, 0, 0)),
-    "nombre": (330, 331, 14, (0, 0, 0)),
-    # FECHAS
-    "fecha_exp": (120, 350, 14, (0, 0, 0)),              # Solo fecha
-    "fecha_exp_completa": (120, 370, 14, (0, 0, 0)),     # Fecha con hora
-    "fecha_ven": (310, 605, 90, (0, 0, 0))               # Vencimiento gigante
-}
+PLANTILLA_PDF = "morelos_hoja1_imagen.pdf"
+PLANTILLA_BUENO = "morelosvergas1.pdf"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -47,39 +31,12 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# ------------ FOLIO FUNCTIONS ------------
-def generar_folio_jalisco():
-    """
-    Lee el mayor folio en la entidad Jalisco y suma +1
-    """
-    try:
-        registros = supabase.table("borradores_registros").select("folio").eq("entidad","Jalisco").execute().data
-        numeros = []
-        for r in registros:
-            f = r["folio"]
-            try:
-                numeros.append(int(f))
-            except:
-                continue
-        siguiente = max(numeros) + 1 if numeros else 5008167415
-        return str(siguiente)
-    except:
-        return "5008167415"
-
-def obtener_folio_representativo():
-    try:
-        with open("folio_representativo.txt") as f:
-            return int(f.read().strip())
-    except FileNotFoundError:
-        with open("folio_representativo.txt", "w") as f:
-            f.write("331997")
-        return 331997
-
-def incrementar_folio_representativo(folio_actual):
-    nuevo = folio_actual + 1
-    with open("folio_representativo.txt", "w") as f:
-        f.write(str(nuevo))
-    return nuevo
+# ------------ FOLIO ------------
+folio_counter = {"count": 1}
+def nuevo_folio() -> str:
+    folio = f"01{folio_counter['count']}"
+    folio_counter["count"] += 1
+    return folio
 
 # ------------ FSM STATES ------------
 class PermisoForm(StatesGroup):
@@ -88,53 +45,41 @@ class PermisoForm(StatesGroup):
     anio = State()
     serie = State()
     motor = State()
-    color = State()
     nombre = State()
 
-# ------------ PDF FUNCTIONS ------------
+# ------------ PDF ------------
 def generar_pdf_principal(datos: dict) -> str:
     doc = fitz.open(PLANTILLA_PDF)
     page = doc[0]
 
-    # Usar coordenadas de Jalisco
-    page.insert_text(coords_jalisco["folio"][:2], datos["folio"], fontsize=coords_jalisco["folio"][2], color=coords_jalisco["folio"][3])
-    page.insert_text(coords_jalisco["marca"][:2], datos["marca"], fontsize=coords_jalisco["marca"][2], color=coords_jalisco["marca"][3])
-    page.insert_text(coords_jalisco["serie"][:2], datos["serie"], fontsize=coords_jalisco["serie"][2], color=coords_jalisco["serie"][3])
-    page.insert_text(coords_jalisco["linea"][:2], datos["linea"], fontsize=coords_jalisco["linea"][2], color=coords_jalisco["linea"][3])
-    page.insert_text(coords_jalisco["motor"][:2], datos["motor"], fontsize=coords_jalisco["motor"][2], color=coords_jalisco["motor"][3])
-    page.insert_text(coords_jalisco["anio"][:2], datos["anio"], fontsize=coords_jalisco["anio"][2], color=coords_jalisco["anio"][3])
-    page.insert_text(coords_jalisco["color"][:2], datos["color"], fontsize=coords_jalisco["color"][2], color=coords_jalisco["color"][3])
-    page.insert_text(coords_jalisco["nombre"][:2], datos["nombre"], fontsize=coords_jalisco["nombre"][2], color=coords_jalisco["nombre"][3])
-    
-    # Fechas
-    page.insert_text(coords_jalisco["fecha_exp"][:2], datos["fecha_exp"], fontsize=coords_jalisco["fecha_exp"][2], color=coords_jalisco["fecha_exp"][3])
-    page.insert_text(coords_jalisco["fecha_exp_completa"][:2], datos["fecha_exp_completa"], fontsize=coords_jalisco["fecha_exp_completa"][2], color=coords_jalisco["fecha_exp_completa"][3])
-    page.insert_text(coords_jalisco["fecha_ven"][:2], datos["fecha_ven"], fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
+    page.insert_text((87, 130), datos["folio"], fontsize=14, color=(1, 0, 0))         # FOLIO
+    page.insert_text((130, 145), datos["fecha"], fontsize=12, color=(0, 0, 0))        # FECHA
+    page.insert_text((87, 290), datos["marca"], fontsize=11, color=(0, 0, 0))         # MARCA
+    page.insert_text((375, 290), datos["serie"], fontsize=11, color=(0, 0, 0))        # SERIE
+    page.insert_text((87, 307), datos["linea"], fontsize=11, color=(0, 0, 0))         # LINEA
+    page.insert_text((375, 307), datos["motor"], fontsize=11, color=(0, 0, 0))        # MOTOR
+    page.insert_text((87, 323), datos["anio"], fontsize=11, color=(0, 0, 0))          # AÑO
+    page.insert_text((375, 323), datos["vigencia"], fontsize=11, color=(0, 0, 0))     # VIGENCIA
+    page.insert_text((375, 340), datos["nombre"], fontsize=11, color=(0, 0, 0))       # NOMBRE
 
-    filename = f"{OUTPUT_DIR}/{datos['folio']}_jalisco.pdf"
+    filename = f"{OUTPUT_DIR}/{datos['folio']}_principal.pdf"
     doc.save(filename)
-    doc.close()
     return filename
 
 def generar_pdf_bueno(serie: str, fecha: datetime, folio: str) -> str:
     doc = fitz.open(PLANTILLA_BUENO)
     page = doc[0]
-    
-    # Usar coordenadas de Jalisco para la segunda plantilla
-    fecha_hora_str = fecha.strftime('%d/%m/%Y %H:%M')
-    page.insert_text((380, 195), fecha_hora_str, fontsize=10, fontname="helv", color=(0, 0, 0))
-    page.insert_text((380, 290), serie, fontsize=10, fontname="helv", color=(0, 0, 0))
-    
-    filename = f"{OUTPUT_DIR}/{folio}_jalisco2.pdf"
+    page.insert_text((135.02, 193.88), serie, fontsize=6)
+    page.insert_text((190, 324), fecha.strftime("%d/%m/%Y"), fontsize=6)
+    filename = f"{OUTPUT_DIR}/{folio}_bueno.pdf"
     doc.save(filename)
-    doc.close()
     return filename
 
 # ------------ HANDLERS ------------
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.answer("👋 Bienvenido al sistema de permisos de Jalisco. Usa /permiso para iniciar")
+    await message.answer("👋 Bienvenido. Usa /permiso para iniciar")
 
 @dp.message(Command("permiso"))
 async def permiso_cmd(message: types.Message, state: FSMContext):
@@ -168,12 +113,6 @@ async def get_serie(message: types.Message, state: FSMContext):
 @dp.message(PermisoForm.motor)
 async def get_motor(message: types.Message, state: FSMContext):
     await state.update_data(motor=message.text.strip())
-    await message.answer("Color del vehículo:")
-    await state.set_state(PermisoForm.color)
-
-@dp.message(PermisoForm.color)
-async def get_color(message: types.Message, state: FSMContext):
-    await state.update_data(color=message.text.strip())
     await message.answer("Nombre del solicitante:")
     await state.set_state(PermisoForm.nombre)
 
@@ -181,19 +120,18 @@ async def get_color(message: types.Message, state: FSMContext):
 async def get_nombre(message: types.Message, state: FSMContext):
     datos = await state.get_data()
     datos["nombre"] = message.text.strip()
-    datos["folio"] = generar_folio_jalisco()
-
-    # Obtener folio representativo
-    folio_rep_actual = obtener_folio_representativo()
-    folio_rep_nuevo = incrementar_folio_representativo(folio_rep_actual)
+    datos["folio"] = nuevo_folio()
 
     # -------- FECHAS FORMATOS --------
     hoy = datetime.now()
-    datos["fecha_exp"] = hoy.strftime("%d/%m/%Y")  # Solo fecha
-    datos["fecha_exp_completa"] = hoy.strftime("%d/%m/%Y %H:%M:%S")  # Fecha con hora
-    
+    meses = {
+        1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
+        5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
+        9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"
+    }
+    datos["fecha"] = f"{hoy.day} de {meses[hoy.month]} del {hoy.year}"
     fecha_ven = hoy + timedelta(days=30)
-    datos["fecha_ven"] = fecha_ven.strftime("%d/%m/%Y")  # Vencimiento
+    datos["vigencia"] = fecha_ven.strftime("%d/%m/%Y")
     # ---------------------------------
 
     try:
@@ -202,29 +140,27 @@ async def get_nombre(message: types.Message, state: FSMContext):
 
         await message.answer_document(
             FSInputFile(p1),
-            caption=f"📄 Permiso Jalisco - Folio: {datos['folio']} | Rep: {folio_rep_nuevo}"
+            caption=f"📄 Principal - Folio: {datos['folio']}"
         )
         await message.answer_document(
             FSInputFile(p2),
-            caption=f"✅ Jalisco 2da Plantilla - Serie: {datos['serie']}"
+            caption=f"✅ EL BUENO - Serie: {datos['serie']}"
         )
 
-        # Guardar en base de datos
-        supabase.table("borradores_registros").insert({
+        supabase.table("folios_registrados").insert({
             "folio": datos["folio"],
             "marca": datos["marca"],
             "linea": datos["linea"],
             "anio": datos["anio"],
             "numero_serie": datos["serie"],
             "numero_motor": datos["motor"],
-            "color": datos["color"],
             "nombre": datos["nombre"],
             "fecha_expedicion": hoy.date().isoformat(),
             "fecha_vencimiento": fecha_ven.date().isoformat(),
-            "entidad": "Jalisco",
+            "entidad": "morelos",
         }).execute()
 
-        await message.answer("✅ Permiso de Jalisco guardado y registrado correctamente.")
+        await message.answer("✅ Permiso guardado y registrado correctamente.")
     except Exception as e:
         await message.answer(f"❌ Error al generar: {e}")
     finally:

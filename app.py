@@ -19,7 +19,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
 OUTPUT_DIR = "documentos"
 PLANTILLA_PDF = "jalisco1.pdf"
-PLANTILLA_BUENO = "jalsco.pdf"
+PLANTILLA_BUENO = "jalisco.pdf"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 

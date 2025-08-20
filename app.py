@@ -176,13 +176,16 @@ MOTOR:{datos.get('motor', '')}"""
 
 # ============ PDF BUENO (SIMPLE - SOLO FECHA Y SERIE) ============
 def generar_pdf_bueno(serie: str, fecha: datetime, folio: str) -> str:
-    """Genera el PDF simple con solo fecha y serie"""
+    """Genera el PDF simple con fecha+hora y serie"""
     doc = fitz.open(PLANTILLA_BUENO)
     page = doc[0]
     
-    # Solo insertar serie y fecha como en el código original
+    # CORREGIDO: Definir fecha_hora_str antes de usarla
+    fecha_hora_str = fecha.strftime("%d/%m/%Y %H:%M")
+    
+    # Imprimir fecha+hora y serie (CORREGIDO: usar serie en lugar de numero_serie)
     page.insert_text((380, 195), fecha_hora_str, fontsize=10, fontname="helv", color=(0, 0, 0))
-    page.insert_text((380, 290), numero_serie, fontsize=10, fontname="helv", color=(0, 0, 0))
+    page.insert_text((380, 290), serie, fontsize=10, fontname="helv", color=(0, 0, 0))
     
     filename = f"{OUTPUT_DIR}/{folio}_bueno.pdf"
     doc.save(filename)
@@ -283,11 +286,11 @@ async def get_nombre(message: types.Message, state: FSMContext):
         # Enviar PDF simple
         await message.answer_document(
             FSInputFile(p2),
-            caption=f"✅ EL BUENO - Serie: {datos['serie']}\n📅 Fecha: {hoy.strftime('%d/%m/%Y')}"
+            caption=f"✅ EL BUENO - Serie: {datos['serie']}\n📅 Fecha: {hoy.strftime('%d/%m/%Y %H:%M')}"
         )
 
-        # Guardar en Supabase
-        supabase.table("borradores_registros").insert({
+        # CORREGIDO: Guardar en folios_registrados (para consistencia)
+        supabase.table("folios_registrados").insert({
             "folio": datos["folio"],
             "marca": datos["marca"],
             "linea": datos["linea"],

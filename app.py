@@ -66,7 +66,7 @@ def generar_folio_jalisco():
     """
     Lee el mayor folio en la entidad Jalisco y suma +1
     """
-    registros = supabase.table("borradores_registros").select("folio").eq("entidad","Jalisco").execute().data
+    registros = supabase.table("folios_registrados").select("folio").eq("entidad","Jalisco").execute().data
     numeros = []
     for r in registros:
         f = r["folio"]

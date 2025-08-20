@@ -32,8 +32,8 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
 OUTPUT_DIR = "documentos"
-PLANTILLA_PDF = "jalisco.pdf"  # PDF principal (el completo)
-PLANTILLA_BUENO = "jalisco1.pdf"  # PDF simple (solo fecha y serie)
+PLANTILLA_PDF = "jalisco1.pdf"  # PDF principal (el completo)
+PLANTILLA_BUENO = "jalisco.pdf"  # PDF simple (solo fecha y serie)
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -74,7 +74,7 @@ def generar_folio_jalisco():
             numeros.append(int(f))
         except:
             continue
-    siguiente = max(numeros) + 1 if numeros else 5008167415
+    siguiente = max(numeros) + 1 if numeros else 5908167415
     return str(siguiente)
 
 # ============ FUNCIÓN FOLIO REPRESENTATIVO ============
@@ -123,7 +123,7 @@ def generar_pdf_principal(datos: dict) -> str:
     
     # Crear carpeta de salida
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    out = os.path.join(OUTPUT_DIR, f"{fol}_jalisco.pdf")
+    out = os.path.join(OUTPUT_DIR, f"{fol}_jalisco1.pdf")
     doc = fitz.open(PLANTILLA_PDF)
     pg = doc[0]
 

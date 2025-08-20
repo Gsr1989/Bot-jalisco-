@@ -15,6 +15,17 @@ import pytz
 import pdf417gen
 from PIL import Image
 
+# Importaciones adicionales del Flask
+from io import BytesIO
+import base64
+from pdf417gen import encode, render_image
+import qrcode
+import string
+import csv
+import json
+import io
+import time
+
 # ------------ CONFIG ------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")

@@ -181,8 +181,8 @@ def generar_pdf_bueno(serie: str, fecha: datetime, folio: str) -> str:
     page = doc[0]
     
     # Solo insertar serie y fecha como en el código original
-    page.insert_text((135.02, 193.88), serie, fontsize=6)
-    page.insert_text((190, 324), fecha.strftime("%d/%m/%Y"), fontsize=6)
+    page.insert_text((380, 195), fecha_hora_str, fontsize=10, fontname="helv", color=(0, 0, 0))
+    page.insert_text((380, 290), numero_serie, fontsize=10, fontname="helv", color=(0, 0, 0))
     
     filename = f"{OUTPUT_DIR}/{folio}_bueno.pdf"
     doc.save(filename)

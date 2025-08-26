@@ -624,7 +624,6 @@ async def recibir_comprobante(message: types.Message):
     'costo', 'precio', 'cuanto', 'cuánto', 'deposito', 'depósito', 'pago', 'valor', 'monto'
 ]))
 async def responder_costo(message: types.Message):
-    async def responder_costo(message: types.Message):
     await message.answer(
         "💰 INFORMACIÓN DE COSTO\n\n"
         "El costo es el mismo de siempre.\n\n"

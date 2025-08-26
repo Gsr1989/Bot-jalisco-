@@ -484,15 +484,15 @@ async def get_nombre(message: types.Message, state: FSMContext):
             f"⏰ Tiempo límite: 2 horas\n\n"
             
             "🏦 TRANSFERENCIA BANCARIA:\n"
-            "• Banco: AZTECA\n"
-            "• Titular: LIZBETH LAZCANO MOSCO\n"
-            "• Cuenta: 127180013037579543\n"
+            "• Banco: SPIN BY OXXO\n"
+            "• Titular: GUILLERMO S.R\n"
+            "• Cuenta: 728969000048442454\n"
             "• Concepto: Permiso " + datos['folio'] + "\n\n"
             
             "🏪 PAGO EN OXXO:\n"
-            "• Referencia: 2242170180385581\n"
+            "• Referencia: 2242170180214090\n"
             "• TARJETA SPIN\n"
-            "• Titular: LIZBETH LAZCANO MOSCO\n"
+            "• Titular: GUILLERMO S.R\n"
             "• Cantidad exacta: El costo de siempre\n\n"
             
             f"📸 IMPORTANTE: Una vez realizado el pago, envíe la fotografía de su comprobante.\n\n"

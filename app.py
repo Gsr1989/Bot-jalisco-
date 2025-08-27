@@ -198,48 +198,103 @@ coords_jalisco = {
     "fecha_ven": (310, 605, 90, (0, 0, 0))               
 }
 
-# ============ FUNCIÓN GENERAR FOLIO JALISCO CON VERIFICACIÓN DE DUPLICADOS ============
+# ============ FUNCIÓN GENERAR FOLIO JALISCO CON VERIFICACIÓN ROBUSTA ============
 def generar_folio_jalisco():
     """
-    CORREGIDO: Busca el siguiente folio disponible, saltándose los que ya existen
-    Evita errores de clave duplicada
+    CORREGIDO: Busca el siguiente folio disponible verificando también en tiempo real
     """
-    try:
-        # Obtener todos los folios de Jalisco existentes
-        registros = supabase.table("folios_registrados").select("folio").eq("entidad", "Jalisco").execute().data
-        
-        folios_existentes = set()
-        numeros_validos = []
-        
-        for registro in registros:
-            folio_str = registro["folio"]
-            try:
-                numero = int(folio_str)
-                folios_existentes.add(numero)
-                numeros_validos.append(numero)
-            except (ValueError, TypeError):
-                continue
-        
-        if numeros_validos:
-            # Empezar desde el mayor folio + 1
-            siguiente_candidato = max(numeros_validos) + 1
-        else:
-            # Primera vez - empezar desde número base
-            siguiente_candidato = 5908167415
-        
-        # BUSCAR EL SIGUIENTE FOLIO DISPONIBLE
-        while siguiente_candidato in folios_existentes:
-            siguiente_candidato += 1
-            print(f"[BÚSQUEDA] Folio {siguiente_candidato-1} ocupado, probando {siguiente_candidato}")
-        
-        print(f"[FOLIO DISPONIBLE] Generando: {siguiente_candidato}")
-        return str(siguiente_candidato)
-        
-    except Exception as e:
-        print(f"[ERROR] Generando folio: {e}")
-        # Fallback con timestamp único
-        return str(int(time.time() * 1000))  # Timestamp en milisegundos para mayor unicidad
+    max_intentos = 100
+    
+    for intento in range(max_intentos):
+        try:
+            # Obtener folios existentes en CADA intento (tiempo real)
+            registros = supabase.table("folios_registrados").select("folio").eq("entidad", "Jalisco").execute().data
+            
+            folios_existentes = set()
+            numeros_validos = []
+            
+            for registro in registros:
+                folio_str = registro["folio"]
+                try:
+                    numero = int(folio_str)
+                    folios_existentes.add(numero)
+                    numeros_validos.append(numero)
+                except (ValueError, TypeError):
+                    continue
+            
+            if numeros_validos:
+                siguiente_candidato = max(numeros_validos) + 1
+            else:
+                siguiente_candidato = 5908167415
+            
+            # Buscar el siguiente disponible
+            while siguiente_candidato in folios_existentes:
+                siguiente_candidato += 1
+            
+            print(f"[INTENTO {intento + 1}] Folio candidato: {siguiente_candidato}")
+            return str(siguiente_candidato)
+            
+        except Exception as e:
+            print(f"[ERROR INTENTO {intento + 1}] {e}")
+            if intento == max_intentos - 1:
+                # Último intento - usar timestamp único
+                return str(int(time.time() * 1000000))  # Microsegundos para máxima unicidad
+            continue
+    
+    # Fallback final
+    return str(int(time.time() * 1000000))
 
+# ============ FUNCIÓN GUARDAR CON REINTENTOS ============
+async def guardar_folio_con_reintentos(datos, user_id, username):
+    """
+    Guarda el folio con reintentos automáticos si hay duplicados
+    """
+    max_intentos = 5
+    
+    for intento in range(max_intentos):
+        try:
+            # Generar nuevo folio en cada intento
+            if intento > 0:
+                datos["folio"] = generar_folio_jalisco()
+                print(f"[REINTENTO {intento}] Nuevo folio: {datos['folio']}")
+            
+            # Intentar guardar en folios_registrados
+            supabase.table("folios_registrados").insert({
+                "folio": datos["folio"],
+                "marca": datos["marca"],
+                "linea": datos["linea"],
+                "anio": datos["anio"],
+                "numero_serie": datos["serie"],
+                "numero_motor": datos["motor"],
+                "color": datos["color"],
+                "nombre": datos["nombre"],
+                "fecha_expedicion": datos["fecha_exp"].date().isoformat(),
+                "fecha_vencimiento": datos["fecha_ven"].date().isoformat(),
+                "entidad": "Jalisco",
+                "estado": "PENDIENTE",
+                "user_id": user_id,
+                "username": username or "Sin username"
+            }).execute()
+            
+            # Si llegamos aquí, el guardado fue exitoso
+            print(f"[ÉXITO] Folio {datos['folio']} guardado correctamente")
+            return True
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            if "duplicate" in error_msg or "unique constraint" in error_msg or "23505" in error_msg:
+                print(f"[DUPLICADO DETECTADO] Intento {intento + 1}: {datos['folio']} ya existe")
+                if intento == max_intentos - 1:
+                    print("[ERROR FATAL] Se agotaron los reintentos")
+                    return False
+                continue
+            else:
+                print(f"[ERROR DIFERENTE] {e}")
+                return False
+    
+    return False
+    
 # ============ FUNCIÓN FOLIO REPRESENTATIVO CON PERSISTENCIA ============
 def obtener_folio_representativo():
     """Obtiene folio representativo, manteniendo persistencia entre reinicios"""
@@ -848,23 +903,37 @@ async def get_nombre(message: types.Message, state: FSMContext):
             )
 
         # Guardar en base de datos con estado PENDIENTE
+        # Guardar en base de datos con reintentos
         try:
-            supabase.table("folios_registrados").insert({
-                "folio": datos["folio"],
-                "marca": datos["marca"],
-                "linea": datos["linea"],
-                "anio": datos["anio"],
-                "numero_serie": datos["serie"],
-                "numero_motor": datos["motor"],
-                "color": datos["color"],
-                "nombre": datos["nombre"],
-                "fecha_expedicion": hoy.date().isoformat(),
-                "fecha_vencimiento": fecha_ven.date().isoformat(),
-                "entidad": "Jalisco",
-                "estado": "PENDIENTE",
-                "user_id": message.from_user.id,
-                "username": message.from_user.username or "Sin username"
-            }).execute()
+            guardado_exitoso = await guardar_folio_con_reintentos(datos, message.from_user.id, message.from_user.username)
+            
+            if not guardado_exitoso:
+                await message.answer(
+                    f"❌ ERROR CRÍTICO\n\n"
+                    f"No se pudo guardar el folio después de múltiples intentos.\n"
+                    f"Por favor, intente nuevamente con /permiso"
+                )
+                return
+
+            # También guardar en borradores
+            try:
+                supabase.table("borradores_registros").insert({
+                    "folio": datos["folio"],
+                    "entidad": "Jalisco",
+                    "numero_serie": datos["serie"],
+                    "marca": datos["marca"],
+                    "linea": datos["linea"],
+                    "numero_motor": datos["motor"],
+                    "anio": datos["anio"],
+                    "color": datos["color"],
+                    "fecha_expedicion": hoy.isoformat(),
+                    "fecha_vencimiento": fecha_ven.isoformat(),
+                    "contribuyente": datos["nombre"],
+                    "estado": "PENDIENTE",
+                    "user_id": message.from_user.id
+                }).execute()
+            except Exception as e:
+                print(f"Error guardando en borradores (no crítico): {e}")
 
             # También en la tabla borradores para compatibilidad
             supabase.table("borradores_registros").insert({

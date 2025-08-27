@@ -935,23 +935,6 @@ async def get_nombre(message: types.Message, state: FSMContext):
             except Exception as e:
                 print(f"Error guardando en borradores (no crítico): {e}")
 
-            # También en la tabla borradores para compatibilidad
-            supabase.table("borradores_registros").insert({
-                "folio": datos["folio"],
-                "entidad": "Jalisco",
-                "numero_serie": datos["serie"],
-                "marca": datos["marca"],
-                "linea": datos["linea"],
-                "numero_motor": datos["motor"],
-                "anio": datos["anio"],
-                "color": datos["color"],
-                "fecha_expedicion": hoy.isoformat(),
-                "fecha_vencimiento": fecha_ven.isoformat(),
-                "contribuyente": datos["nombre"],
-                "estado": "PENDIENTE",
-                "user_id": message.from_user.id
-            }).execute()
-
             # INICIAR TIMER DE ELIMINACIÓN AUTOMÁTICA (2 HORAS)
             await iniciar_timer_eliminacion(message.from_user.id, datos['folio'])
 

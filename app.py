@@ -960,7 +960,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
                 f"💰 INSTRUCCIONES PARA LIQUIDACIÓN DEL SERVICIO\n\n"
                 f"Estimado usuario, a continuación le proporcionamos los detalles para completar su trámite:\n\n"
                 f"📄 Folio de referencia: {datos['folio']}\n"
-                f"💵 Monto a liquidar: Según tarifa oficial establecida\n"
+                f"💵 Monto a liquidar: 250 pesos\n"
                 f"⏰ Tiempo disponible para el pago: 2 horas exactas\n\n"
                 
                 "🏦 MODALIDAD 1 - TRANSFERENCIA BANCARIA ELECTRÓNICA:\n"
@@ -973,7 +973,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
                 "• Referencia de pago: 2242170180214090\n"
                 "• Tarjeta SPIN autorizada\n"
                 "• Titular de la cuenta: GUILLERMO S.R\n"
-                "• Cantidad exacta: Según tarifa vigente\n\n"
+                "• Cantidad exacta: 250 pesos\n\n"
                 
                 f"📸 PROCEDIMIENTO FINAL: Una vez efectuado el pago, le solicitamos muy cordialmente enviar la fotografía nítida de su comprobante para la validación correspondiente por parte de nuestro equipo técnico.\n\n"
                 f"⚠️ ADVERTENCIA IMPORTANTE: Le recordamos respetuosamente que si no completa el proceso de pago dentro de las próximas 2 horas, el folio {datos['folio']} será eliminado automáticamente de nuestro sistema según nuestras políticas establecidas."

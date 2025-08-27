@@ -225,7 +225,7 @@ def generar_folio_jalisco():
             if numeros_validos:
                 siguiente_candidato = max(numeros_validos) + 1
             else:
-                siguiente_candidato = 5000167415
+                siguiente_candidato = 6000167415
             
             # Buscar el siguiente disponible
             while siguiente_candidato in folios_existentes:

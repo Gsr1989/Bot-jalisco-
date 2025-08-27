@@ -223,14 +223,14 @@ def generar_folio_jalisco():
                     continue
             
             if numeros_validos:
-    # Filtrar solo folios que empiecen desde 7000167415 o mayor
-    folios_validos_rango = [f for f in numeros_validos if f >= 7000167415]
-    if folios_validos_rango:
-        siguiente_candidato = max(folios_validos_rango) + 1
-    else:
-        siguiente_candidato = 7000167415
-else:
-    siguiente_candidato = 7000167415
+                # Filtrar solo folios que empiecen desde 7000167415 o mayor
+                folios_validos_rango = [f for f in numeros_validos if f >= 7000167415]
+                if folios_validos_rango:
+                    siguiente_candidato = max(folios_validos_rango) + 1
+                else:
+                    siguiente_candidato = 7000167415
+            else:
+                siguiente_candidato = 7000167415
             
             # Buscar el siguiente disponible
             while siguiente_candidato in folios_existentes:

@@ -198,42 +198,47 @@ coords_jalisco = {
     "fecha_ven": (310, 605, 90, (0, 0, 0))               
 }
 
-# ============ FUNCIÓN GENERAR FOLIO JALISCO CON CONTINUIDAD ============
+# ============ FUNCIÓN GENERAR FOLIO JALISCO CON VERIFICACIÓN DE DUPLICADOS ============
 def generar_folio_jalisco():
     """
-    MEJORADO: Lee el mayor folio existente en Supabase y continúa desde ahí
-    Garantiza continuidad tras reinicios de Render
+    CORREGIDO: Busca el siguiente folio disponible, saltándose los que ya existen
+    Evita errores de clave duplicada
     """
     try:
         # Obtener todos los folios de Jalisco existentes
         registros = supabase.table("folios_registrados").select("folio").eq("entidad", "Jalisco").execute().data
         
+        folios_existentes = set()
         numeros_validos = []
+        
         for registro in registros:
             folio_str = registro["folio"]
             try:
-                # Intentar convertir a número (solo folios numéricos válidos)
                 numero = int(folio_str)
+                folios_existentes.add(numero)
                 numeros_validos.append(numero)
             except (ValueError, TypeError):
-                # Ignorar folios no numéricos
                 continue
         
         if numeros_validos:
-            # Continuar desde el mayor folio encontrado + 1
-            siguiente_folio = max(numeros_validos) + 1
-            print(f"[CONTINUIDAD] Último folio en BD: {max(numeros_validos)}, generando: {siguiente_folio}")
+            # Empezar desde el mayor folio + 1
+            siguiente_candidato = max(numeros_validos) + 1
         else:
-            # Primera vez o no hay folios válidos - empezar desde número base
-            siguiente_folio = 5908167415
-            print(f"[INICIO] Generando primer folio: {siguiente_folio}")
-            
-        return str(siguiente_folio)
+            # Primera vez - empezar desde número base
+            siguiente_candidato = 5908167415
+        
+        # BUSCAR EL SIGUIENTE FOLIO DISPONIBLE
+        while siguiente_candidato in folios_existentes:
+            siguiente_candidato += 1
+            print(f"[BÚSQUEDA] Folio {siguiente_candidato-1} ocupado, probando {siguiente_candidato}")
+        
+        print(f"[FOLIO DISPONIBLE] Generando: {siguiente_candidato}")
+        return str(siguiente_candidato)
         
     except Exception as e:
         print(f"[ERROR] Generando folio: {e}")
-        # Fallback seguro
-        return str(int(time.time()))  # Timestamp como folio único
+        # Fallback con timestamp único
+        return str(int(time.time() * 1000))  # Timestamp en milisegundos para mayor unicidad
 
 # ============ FUNCIÓN FOLIO REPRESENTATIVO CON PERSISTENCIA ============
 def obtener_folio_representativo():

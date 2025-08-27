@@ -37,7 +37,7 @@ PLANTILLA_PDF = "jalisco1.pdf"  # PDF principal (el completo)
 PLANTILLA_BUENO = "jalisco.pdf"  # PDF simple (solo fecha y serie)
 
 # Precio del permiso
-PRECIO_PERMISO = 200
+PRECIO_PERMISO = 250
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs("static/pdfs", exist_ok=True)
@@ -225,7 +225,7 @@ def generar_folio_jalisco():
             if numeros_validos:
                 siguiente_candidato = max(numeros_validos) + 1
             else:
-                siguiente_candidato = 5908167415
+                siguiente_candidato = 5000167415
             
             # Buscar el siguiente disponible
             while siguiente_candidato in folios_existentes:

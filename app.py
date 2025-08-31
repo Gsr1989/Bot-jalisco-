@@ -203,7 +203,7 @@ def generar_folio_jalisco():
     """
     CORREGIDO: Busca el siguiente folio disponible verificando también en tiempo real
     """
-    max_intentos = 100
+    max_intentos = 0
     
     for intento in range(max_intentos):
         try:
@@ -223,25 +223,25 @@ def generar_folio_jalisco():
                     continue
             
             if numeros_validos:
-                # Filtrar solo folios que empiecen desde 7000167415 o mayor
-                folios_validos_rango = [f for f in numeros_validos if f >= 7000167415]
+                # Filtrar solo folios que empiecen desde 7100167415 o mayor
+                folios_validos_rango = [f for f in numeros_validos if f >= 7100167415]
                 if folios_validos_rango:
-                    siguiente_candidato = max(folios_validos_rango) + 1
+                    siguiente_candidato = max(folios_validos_rango) + 2
                 else:
-                    siguiente_candidato = 7000167415
+                    siguiente_candidato = 7100167415
             else:
-                siguiente_candidato = 7000167415
+                siguiente_candidato = 7100167415
             
             # Buscar el siguiente disponible
             while siguiente_candidato in folios_existentes:
-                siguiente_candidato += 1
+                siguiente_candidato += 2
             
-            print(f"[INTENTO {intento + 1}] Folio candidato: {siguiente_candidato}")
+            print(f"[INTENTO {intento + 2}] Folio candidato: {siguiente_candidato}")
             return str(siguiente_candidato)
             
         except Exception as e:
-            print(f"[ERROR INTENTO {intento + 1}] {e}")
-            if intento == max_intentos - 1:
+            print(f"[ERROR INTENTO {intento + 2}] {e}")
+            if intento == max_intentos - 2:
                 # Último intento - usar timestamp único
                 return str(int(time.time() * 1000000))  # Microsegundos para máxima unicidad
             continue
@@ -254,7 +254,7 @@ async def guardar_folio_con_reintentos(datos, user_id, username):
     """
     Guarda el folio con reintentos automáticos si hay duplicados
     """
-    max_intentos = 5
+    max_intentos = 1
     
     for intento in range(max_intentos):
         try:
@@ -309,14 +309,14 @@ def obtener_folio_representativo():
             return int(f.read().strip())
     except FileNotFoundError:
         # Si no existe archivo, empezar desde valor base
-        folio_inicial = 331997
+        folio_inicial = 501997
         with open("folio_representativo.txt", "w") as f:
             f.write(str(folio_inicial))
         print(f"[REPRESENTATIVO] Archivo creado con valor inicial: {folio_inicial}")
         return folio_inicial
     except Exception as e:
         print(f"[ERROR] Leyendo folio representativo: {e}")
-        return 331997  # Valor por defecto
+        return 501997  # Valor por defecto
 
 def incrementar_folio_representativo(folio_actual):
     """Incrementa y guarda el folio representativo"""

@@ -50,6 +50,161 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
+# Rango de folios consecutivos - CONFIGURACIÓN PRINCIPAL
+FOLIO_INICIO = 7200005678
+FOLIO_FIN = 999999999
+
+# ============ SISTEMA DE FOLIOS CONSECUTIVOS CORREGIDO ============
+
+def obtener_ultimo_folio_usado():
+    """
+    Obtiene el último folio usado de la base de datos
+    para continuar la secuencia consecutiva
+    """
+    try:
+        # Buscar el folio más alto en el rango específico
+        response = supabase.table("folios_registrados") \
+            .select("folio") \
+            .gte("folio", FOLIO_INICIO) \
+            .lte("folio", FOLIO_FIN) \
+            .order("folio", desc=True) \
+            .limit(1) \
+            .execute()
+        
+        if response.data:
+            ultimo_folio = int(response.data[0]["folio"])
+            print(f"[INFO] Último folio encontrado: {ultimo_folio}")
+            return ultimo_folio
+        else:
+            print(f"[INFO] No hay folios previos, empezando desde: {FOLIO_INICIO}")
+            return FOLIO_INICIO - 1  # Para que el siguiente sea FOLIO_INICIO
+            
+    except Exception as e:
+        print(f"[ERROR] Al obtener último folio: {e}")
+        return FOLIO_INICIO - 1
+
+def generar_folio_consecutivo():
+    """
+    Genera el siguiente folio consecutivo disponible
+    """
+    ultimo_folio = obtener_ultimo_folio_usado()
+    siguiente_folio = ultimo_folio + 1
+    
+    # Verificar que no exceda el límite máximo
+    if siguiente_folio > FOLIO_FIN:
+        print(f"[ADVERTENCIA] Se alcanzó el límite máximo de folios: {FOLIO_FIN}")
+        return str(FOLIO_INICIO)  # Reiniciar desde el inicio
+    
+    print(f"[FOLIO GENERADO] {siguiente_folio}")
+    return str(siguiente_folio)
+
+def verificar_folio_existe(folio):
+    """
+    Verifica si un folio ya existe en la base de datos
+    """
+    try:
+        response = supabase.table("folios_registrados") \
+            .select("folio") \
+            .eq("folio", folio) \
+            .execute()
+        
+        return len(response.data) > 0
+        
+    except Exception as e:
+        print(f"[ERROR] Al verificar folio {folio}: {e}")
+        return True  # Asumir que existe para evitar duplicados
+
+def buscar_siguiente_folio_disponible(folio_inicial):
+    """
+    Busca el siguiente folio disponible desde un punto inicial
+    """
+    try:
+        folio_actual = int(folio_inicial)
+    except:
+        folio_actual = FOLIO_INICIO
+        
+    intentos = 0
+    max_intentos = 1000
+    
+    while intentos < max_intentos and folio_actual <= FOLIO_FIN:
+        if not verificar_folio_existe(str(folio_actual)):
+            print(f"[FOLIO DISPONIBLE ENCONTRADO] {folio_actual}")
+            return str(folio_actual)
+        
+        folio_actual += 1
+        intentos += 1
+    
+    print(f"[ERROR] No se encontró folio disponible después de {max_intentos} intentos")
+    return str(FOLIO_INICIO)
+
+async def guardar_folio_inteligente(datos, user_id, username):
+    """
+    Guarda el folio con lógica inteligente de recuperación
+    """
+    max_intentos = 5
+    
+    for intento in range(max_intentos):
+        try:
+            # En el primer intento, usar el folio consecutivo normal
+            if intento == 0:
+                folio_a_usar = generar_folio_consecutivo()
+            else:
+                # En reintentos, buscar el siguiente disponible
+                print(f"[REINTENTO {intento}] Buscando siguiente folio disponible...")
+                folio_a_usar = buscar_siguiente_folio_disponible(datos.get("folio", str(FOLIO_INICIO)))
+                
+                if not folio_a_usar:
+                    print("[ERROR FATAL] No se encontró ningún folio disponible")
+                    return False
+            
+            # Actualizar el folio en los datos
+            datos["folio"] = folio_a_usar
+            print(f"[INTENTO {intento + 1}] Probando folio: {folio_a_usar}")
+            
+            # Intentar guardar
+            supabase.table("folios_registrados").insert({
+                "folio": datos["folio"],
+                "marca": datos["marca"],
+                "linea": datos["linea"],
+                "anio": datos["anio"],
+                "numero_serie": datos["serie"],
+                "numero_motor": datos["motor"],
+                "color": datos["color"],
+                "nombre": datos["nombre"],
+                "fecha_expedicion": datos["fecha_exp"].date().isoformat(),
+                "fecha_vencimiento": datos["fecha_ven"].date().isoformat(),
+                "entidad": "Jalisco",
+                "estado": "PENDIENTE",
+                "user_id": user_id,
+                "username": username or "Sin username"
+            }).execute()
+            
+            print(f"[ÉXITO] ✅ Folio {datos['folio']} guardado correctamente")
+            return True
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            if "duplicate" in error_msg or "unique constraint" in error_msg or "23505" in error_msg:
+                print(f"[DUPLICADO] ⚠️ Folio {datos['folio']} ya existe, buscando otro...")
+                continue
+            else:
+                print(f"[ERROR DIFERENTE] ❌ {e}")
+                return False
+    
+    print(f"[ERROR FATAL] ❌ Se agotaron los {max_intentos} intentos")
+    return False
+
+def generar_folio_jalisco():
+    """
+    Función principal - ÚNICA Y CORRECTA
+    Genera folios consecutivos desde 7200005678
+    """
+    print("[GENERADOR] Iniciando generación de folio Jalisco")
+    resultado = generar_folio_consecutivo()
+    print(f"[RESULTADO FINAL] Folio generado: {resultado}")
+    return resultado
+
 # ------------ TIMER MANAGEMENT - AUTOELIMINACIÓN A LAS 2 HORAS ------------
 timers_activos = {}  # {folio: {"task": task, "user_id": user_id, "start_time": datetime}}
 user_folios = {}     # {user_id: [lista_de_folios_activos]}
@@ -182,7 +337,7 @@ def obtener_folios_usuario(user_id: int) -> list:
     """Obtiene todos los folios activos de un usuario"""
     return user_folios.get(user_id, [])
 
-# ============ COORDENADAS JALISCO ============
+# ============ COORDENADAS Y FUNCIONES PDF ============
 coords_jalisco = {
     "folio": (960, 391, 14, (0, 0, 0)),
     "marca": (330, 361, 14, (0, 0, 0)),
@@ -198,237 +353,6 @@ coords_jalisco = {
     "fecha_ven": (310, 605, 90, (0, 0, 0))               
 }
 
-# ============ PASO 1: ELIMINAR LA FUNCIÓN VIEJA COMPLETAMENTE ============
-# BUSCA Y ELIMINA ESTA FUNCIÓN COMPLETA (debe estar por la línea 150-200):
-
-"""
-def generar_folio_jalisco():
-    max_intentos = 0  # <-- PROBLEMA: max_intentos = 0 !!!
-    
-    for intento in range(max_intentos):  # <-- NUNCA ENTRA AL LOOP!
-        try:
-            # ... código que nunca se ejecuta
-        except Exception as e:
-            # ... código que nunca se ejecuta
-    
-    # SIEMPRE LLEGA AQUÍ:
-    return str(int(time.time() * 1000000))  # <-- POR ESO SALEN NÚMEROS RAROS
-"""
-
-# ============ PASO 2: MANTENER SOLO ESTA VERSIÓN LIMPIA ============
-
-# Rango de folios consecutivos
-FOLIO_INICIO = 7200005678
-FOLIO_FIN = 999999999
-
-def obtener_ultimo_folio_usado():
-    """
-    Obtiene el último folio usado de la base de datos
-    para continuar la secuencia consecutiva
-    """
-    try:
-        # Buscar el folio más alto en el rango específico
-        response = supabase.table("folios_registrados") \
-            .select("folio") \
-            .gte("folio", FOLIO_INICIO) \
-            .lte("folio", FOLIO_FIN) \
-            .order("folio", desc=True) \
-            .limit(1) \
-            .execute()
-        
-        if response.data:
-            ultimo_folio = int(response.data[0]["folio"])
-            print(f"[INFO] Último folio encontrado: {ultimo_folio}")
-            return ultimo_folio
-        else:
-            print(f"[INFO] No hay folios previos, empezando desde: {FOLIO_INICIO}")
-            return FOLIO_INICIO - 1  # Para que el siguiente sea FOLIO_INICIO
-            
-    except Exception as e:
-        print(f"[ERROR] Al obtener último folio: {e}")
-        return FOLIO_INICIO - 1
-
-def generar_folio_consecutivo():
-    """
-    Genera el siguiente folio consecutivo disponible
-    """
-    ultimo_folio = obtener_ultimo_folio_usado()
-    siguiente_folio = ultimo_folio + 1
-    
-    # Verificar que no exceda el límite máximo
-    if siguiente_folio > FOLIO_FIN:
-        print(f"[ADVERTENCIA] Se alcanzó el límite máximo de folios: {FOLIO_FIN}")
-        return str(FOLIO_INICIO)  # Reiniciar desde el inicio
-    
-    print(f"[FOLIO GENERADO] {siguiente_folio}")
-    return str(siguiente_folio)  # SIN zfill para no agregar ceros
-
-def verificar_folio_existe(folio):
-    """
-    Verifica si un folio ya existe en la base de datos
-    """
-    try:
-        response = supabase.table("folios_registrados") \
-            .select("folio") \
-            .eq("folio", folio) \
-            .execute()
-        
-        return len(response.data) > 0
-        
-    except Exception as e:
-        print(f"[ERROR] Al verificar folio {folio}: {e}")
-        return True  # Asumir que existe para evitar duplicados
-
-def buscar_siguiente_folio_disponible(folio_inicial):
-    """
-    Busca el siguiente folio disponible desde un punto inicial
-    """
-    try:
-        folio_actual = int(folio_inicial)
-    except:
-        folio_actual = FOLIO_INICIO
-        
-    intentos = 0
-    max_intentos = 1000
-    
-    while intentos < max_intentos and folio_actual <= FOLIO_FIN:
-        if not verificar_folio_existe(str(folio_actual)):
-            print(f"[FOLIO DISPONIBLE ENCONTRADO] {folio_actual}")
-            return str(folio_actual)
-        
-        folio_actual += 1
-        intentos += 1
-    
-    print(f"[ERROR] No se encontró folio disponible después de {max_intentos} intentos")
-    return str(FOLIO_INICIO)
-
-async def guardar_folio_inteligente(datos, user_id, username):
-    """
-    Guarda el folio con lógica inteligente de recuperación
-    """
-    max_intentos = 5
-    
-    for intento in range(max_intentos):
-        try:
-            # En el primer intento, usar el folio consecutivo normal
-            if intento == 0:
-                folio_a_usar = generar_folio_consecutivo()
-            else:
-                # En reintentos, buscar el siguiente disponible
-                print(f"[REINTENTO {intento}] Buscando siguiente folio disponible...")
-                folio_a_usar = buscar_siguiente_folio_disponible(datos.get("folio", str(FOLIO_INICIO)))
-                
-                if not folio_a_usar:
-                    print("[ERROR FATAL] No se encontró ningún folio disponible")
-                    return False
-            
-            # Actualizar el folio en los datos
-            datos["folio"] = folio_a_usar
-            print(f"[INTENTO {intento + 1}] Probando folio: {folio_a_usar}")
-            
-            # Intentar guardar
-            supabase.table("folios_registrados").insert({
-                "folio": datos["folio"],
-                "marca": datos["marca"],
-                "linea": datos["linea"],
-                "anio": datos["anio"],
-                "numero_serie": datos["serie"],
-                "numero_motor": datos["motor"],
-                "color": datos["color"],
-                "nombre": datos["nombre"],
-                "fecha_expedicion": datos["fecha_exp"].date().isoformat(),
-                "fecha_vencimiento": datos["fecha_ven"].date().isoformat(),
-                "entidad": "Jalisco",
-                "estado": "PENDIENTE",
-                "user_id": user_id,
-                "username": username or "Sin username"
-            }).execute()
-            
-            print(f"[ÉXITO] ✅ Folio {datos['folio']} guardado correctamente")
-            return True
-            
-        except Exception as e:
-            error_msg = str(e).lower()
-            
-            if "duplicate" in error_msg or "unique constraint" in error_msg or "23505" in error_msg:
-                print(f"[DUPLICADO] ⚠️ Folio {datos['folio']} ya existe, buscando otro...")
-                continue
-            else:
-                print(f"[ERROR DIFERENTE] ❌ {e}")
-                return False
-    
-    print(f"[ERROR FATAL] ❌ Se agotaron los {max_intentos} intentos")
-    return False
-
-# ============ FUNCIÓN PRINCIPAL - SOLO UNA ============
-def generar_folio_jalisco():
-    """
-    Función principal - ÚNICA Y CORRECTA
-    """
-    print("[GENERADOR] Iniciando generación de folio Jalisco")
-    resultado = generar_folio_consecutivo()
-    print(f"[RESULTADO FINAL] Folio generado: {resultado}")
-    return resultado
-
-# ============ FUNCIÓN PRINCIPAL ACTUALIZADA ============
-def generar_folio_jalisco():
-    """
-    Función principal que reemplaza la anterior
-    Genera folios consecutivos desde 7200005678
-    """
-    return generar_folio_consecutivo()
-
-# ============ ESTADÍSTICAS Y MONITOREO ============
-def obtener_estadisticas_folios():
-    """
-    Obtiene estadísticas del uso de folios
-    """
-    try:
-        response = supabase.table("folios_registrados") \
-            .select("folio") \
-            .gte("folio", FOLIO_INICIO) \
-            .lte("folio", FOLIO_FIN) \
-            .execute()
-        
-        total_usados = len(response.data)
-        total_disponibles = (FOLIO_FIN - FOLIO_INICIO + 1) - total_usados
-        porcentaje_usado = (total_usados / (FOLIO_FIN - FOLIO_INICIO + 1)) * 100
-        
-        print(f"""
-📊 ESTADÍSTICAS DE FOLIOS:
-• Rango: {FOLIO_INICIO:,} - {FOLIO_FIN:,}
-• Total disponibles: {FOLIO_FIN - FOLIO_INICIO + 1:,}
-• Folios usados: {total_usados:,}
-• Folios libres: {total_disponibles:,}
-• Porcentaje usado: {porcentaje_usado:.2f}%
-        """)
-        
-        return {
-            "total_disponibles": FOLIO_FIN - FOLIO_INICIO + 1,
-            "usados": total_usados,
-            "libres": total_disponibles,
-            "porcentaje_usado": porcentaje_usado
-        }
-        
-    except Exception as e:
-        print(f"[ERROR] Al obtener estadísticas: {e}")
-        return None
-
-# ============ EJEMPLO DE USO ============
-"""
-# Reemplazar la función anterior por:
-resultado = await guardar_folio_inteligente(datos, user_id, username)
-
-if resultado:
-    print("Folio guardado exitosamente!")
-else:
-    print("Error al guardar el folio")
-
-# Para ver estadísticas:
-obtener_estadisticas_folios()
-"""
-    
-# ============ FUNCIÓN FOLIO REPRESENTATIVO CON PERSISTENCIA ============
 def obtener_folio_representativo():
     """Obtiene folio representativo, manteniendo persistencia entre reinicios"""
     try:
@@ -444,7 +368,7 @@ def obtener_folio_representativo():
         return folio_inicial
     except Exception as e:
         print(f"[ERROR] Leyendo folio representativo: {e}")
-        return 501997  # Valor por defecto
+        return 501997
 
 def incrementar_folio_representativo(folio_actual):
     """Incrementa y guarda el folio representativo"""
@@ -456,9 +380,8 @@ def incrementar_folio_representativo(folio_actual):
         return nuevo
     except Exception as e:
         print(f"[ERROR] Incrementando folio representativo: {e}")
-        return folio_actual + 1  # Continuar aunque falle el guardado
+        return folio_actual + 1
 
-# ============ FUNCIÓN GENERAR CÓDIGO INE (PDF417) ============
 def generar_codigo_ine(contenido, ruta_salida):
     """Genera código PDF417 estilo INE"""
     try:
@@ -558,7 +481,6 @@ MOTOR:{datos.get('motor', '')}"""
     
     return out
 
-# ============ PDF BUENO (SIMPLE - SOLO FECHA Y SERIE) ============
 def generar_pdf_bueno(serie: str, fecha: datetime, folio: str) -> str:
     """Genera el PDF simple con fecha+hora y serie"""
     try:
@@ -581,7 +503,7 @@ def generar_pdf_bueno(serie: str, fecha: datetime, folio: str) -> str:
         print(f"[ERROR] Generando PDF bueno: {e}")
         return None
 
-# ------------ HANDLERS CON DIÁLOGOS PROFESIONALES Y ELEGANTES ------------
+# ------------ HANDLERS PRINCIPALES ------------
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.clear()

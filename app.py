@@ -226,7 +226,7 @@ def generar_folio_jalisco():
                 # Filtrar solo folios que empiecen desde 7100167415 o mayor
                 folios_validos_rango = [f for f in numeros_validos if f >= 7100167415]
                 if folios_validos_rango:
-                    siguiente_candidato = max(folios_validos_rango) + 2
+                    siguiente_candidato = max(folios_validos_rango) + 1
                 else:
                     siguiente_candidato = 7100167415
             else:
@@ -234,14 +234,14 @@ def generar_folio_jalisco():
             
             # Buscar el siguiente disponible
             while siguiente_candidato in folios_existentes:
-                siguiente_candidato += 2
+                siguiente_candidato += 1
             
-            print(f"[INTENTO {intento + 2}] Folio candidato: {siguiente_candidato}")
+            print(f"[INTENTO {intento + 1}] Folio candidato: {siguiente_candidato}")
             return str(siguiente_candidato)
             
         except Exception as e:
-            print(f"[ERROR INTENTO {intento + 2}] {e}")
-            if intento == max_intentos - 2:
+            print(f"[ERROR INTENTO {intento + 1}] {e}")
+            if intento == max_intentos - 1:
                 # Último intento - usar timestamp único
                 return str(int(time.time() * 1000000))  # Microsegundos para máxima unicidad
             continue

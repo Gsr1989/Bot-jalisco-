@@ -897,8 +897,9 @@ async def get_nombre(message: types.Message, state: FSMContext):
     
     datos["nombre"] = nombre
     
-    # Generar folio único de Jalisco con continuidad
+    # GENERAR FOLIO CONSECUTIVO CORREGIDO
     datos["folio"] = generar_folio_jalisco()
+    print(f"[DEBUG CRÍTICO] Folio generado: {datos['folio']}")
 
     # Fechas
     hoy = datetime.now()
@@ -957,10 +958,9 @@ async def get_nombre(message: types.Message, state: FSMContext):
                        f"📋 Comprobante adicional de autenticidad y respaldo"
             )
 
-        # Guardar en base de datos con estado PENDIENTE
-        # Guardar en base de datos con reintentos
+        # ========== LÍNEA CORREGIDA - AQUÍ ESTABA EL ERROR ==========
         try:
-            guardado_exitoso = await guardar_folio_con_reintentos(datos, message.from_user.id, message.from_user.username)
+            guardado_exitoso = await guardar_folio_inteligente(datos, message.from_user.id, message.from_user.username)
             
             if not guardado_exitoso:
                 await message.answer(
@@ -1348,6 +1348,11 @@ async def fallback(message: types.Message):
     ]
     await message.answer(random.choice(respuestas_elegantes))
 
+# ------------ FASTAPI + LIFESPAN ------------
+_keep_task = None
+
+async def keep_alive():
+    """Mantiene el bot activo con pings periódicos"""
 # ------------ FASTAPI + LIFESPAN ------------
 _keep_task = None
 

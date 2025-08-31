@@ -1353,11 +1353,6 @@ _keep_task = None
 
 async def keep_alive():
     """Mantiene el bot activo con pings periódicos"""
-# ------------ FASTAPI + LIFESPAN ------------
-_keep_task = None
-
-async def keep_alive():
-    """Mantiene el bot activo con pings periódicos"""
     while True:
         await asyncio.sleep(600)  # 10 minutos
         print("[HEARTBEAT] Sistema Jalisco activo")

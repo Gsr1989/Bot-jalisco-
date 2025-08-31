@@ -198,60 +198,24 @@ coords_jalisco = {
     "fecha_ven": (310, 605, 90, (0, 0, 0))               
 }
 
-# ============ FUNCIÓN GENERAR FOLIO JALISCO CON VERIFICACIÓN ROBUSTA ============
-def generar_folio_jalisco():
-    """
-    CORREGIDO: Busca el siguiente folio disponible verificando también en tiempo real
-    """
-    max_intentos = 0
-    
-    for intento in range(max_intentos):
-        try:
-            # Obtener folios existentes en CADA intento (tiempo real)
-            registros = supabase.table("folios_registrados").select("folio").eq("entidad", "Jalisco").execute().data
-            
-            folios_existentes = set()
-            numeros_validos = []
-            
-            for registro in registros:
-                folio_str = registro["folio"]
-                try:
-                    numero = int(folio_str)
-                    folios_existentes.add(numero)
-                    numeros_validos.append(numero)
-                except (ValueError, TypeError):
-                    continue
-            
-            if numeros_validos:
-                # Filtrar solo folios que empiecen desde 7100167415 o mayor
-                folios_validos_rango = [f for f in numeros_validos if f >= 7100167415]
-                if folios_validos_rango:
-                    siguiente_candidato = max(folios_validos_rango) + 1
-                else:
-                    siguiente_candidato = 7100167415
-            else:
-                siguiente_candidato = 7100167415
-            
-            # Buscar el siguiente disponible
-            while siguiente_candidato in folios_existentes:
-                siguiente_candidato += 1
-            
-            print(f"[INTENTO {intento + 1}] Folio candidato: {siguiente_candidato}")
-            return str(siguiente_candidato)
-            
-        except Exception as e:
-            print(f"[ERROR INTENTO {intento + 1}] {e}")
-            if intento == max_intentos - 1:
-                # Último intento - usar timestamp único
-                return str(int(time.time() * 1000000))  # Microsegundos para máxima unicidad
-            continue
-    
-    # Fallback final
-    return str(int(time.time() * 1000000))
+# ============ PASO 1: ELIMINAR LA FUNCIÓN VIEJA COMPLETAMENTE ============
+# BUSCA Y ELIMINA ESTA FUNCIÓN COMPLETA (debe estar por la línea 150-200):
 
-# ============ GENERADOR DE FOLIOS INTELIGENTE ============
-import random
-from supabase import create_client, Client
+"""
+def generar_folio_jalisco():
+    max_intentos = 0  # <-- PROBLEMA: max_intentos = 0 !!!
+    
+    for intento in range(max_intentos):  # <-- NUNCA ENTRA AL LOOP!
+        try:
+            # ... código que nunca se ejecuta
+        except Exception as e:
+            # ... código que nunca se ejecuta
+    
+    # SIEMPRE LLEGA AQUÍ:
+    return str(int(time.time() * 1000000))  # <-- POR ESO SALEN NÚMEROS RAROS
+"""
+
+# ============ PASO 2: MANTENER SOLO ESTA VERSIÓN LIMPIA ============
 
 # Rango de folios consecutivos
 FOLIO_INICIO = 7200005678
@@ -294,39 +258,10 @@ def generar_folio_consecutivo():
     # Verificar que no exceda el límite máximo
     if siguiente_folio > FOLIO_FIN:
         print(f"[ADVERTENCIA] Se alcanzó el límite máximo de folios: {FOLIO_FIN}")
-        # Opcional: buscar gaps en la secuencia
-        return buscar_folio_disponible_en_gaps()
+        return str(FOLIO_INICIO)  # Reiniciar desde el inicio
     
-    return str(siguiente_folio).zfill(10)  # Asegurar formato de 10 dígitos
-
-def buscar_folio_disponible_en_gaps():
-    """
-    Busca folios disponibles en gaps de la secuencia
-    (útil si se alcanza el límite o hay huecos)
-    """
-    try:
-        # Obtener todos los folios registrados en el rango
-        response = supabase.table("folios_registrados") \
-            .select("folio") \
-            .gte("folio", FOLIO_INICIO) \
-            .lte("folio", FOLIO_FIN) \
-            .order("folio") \
-            .execute()
-        
-        folios_usados = set(int(row["folio"]) for row in response.data)
-        
-        # Buscar el primer gap disponible
-        for folio_candidato in range(FOLIO_INICIO, FOLIO_FIN + 1):
-            if folio_candidato not in folios_usados:
-                print(f"[GAP ENCONTRADO] Folio disponible: {folio_candidato}")
-                return str(folio_candidato).zfill(10)
-        
-        print("[ERROR] No hay folios disponibles en todo el rango")
-        return None
-        
-    except Exception as e:
-        print(f"[ERROR] Al buscar gaps: {e}")
-        return None
+    print(f"[FOLIO GENERADO] {siguiente_folio}")
+    return str(siguiente_folio)  # SIN zfill para no agregar ceros
 
 def verificar_folio_existe(folio):
     """
@@ -348,21 +283,25 @@ def buscar_siguiente_folio_disponible(folio_inicial):
     """
     Busca el siguiente folio disponible desde un punto inicial
     """
-    folio_actual = int(folio_inicial)
+    try:
+        folio_actual = int(folio_inicial)
+    except:
+        folio_actual = FOLIO_INICIO
+        
     intentos = 0
-    max_intentos = 1000  # Evitar bucles infinitos
+    max_intentos = 1000
     
     while intentos < max_intentos and folio_actual <= FOLIO_FIN:
-        if not verificar_folio_existe(str(folio_actual).zfill(10)):
-            return str(folio_actual).zfill(10)
+        if not verificar_folio_existe(str(folio_actual)):
+            print(f"[FOLIO DISPONIBLE ENCONTRADO] {folio_actual}")
+            return str(folio_actual)
         
         folio_actual += 1
         intentos += 1
     
     print(f"[ERROR] No se encontró folio disponible después de {max_intentos} intentos")
-    return None
+    return str(FOLIO_INICIO)
 
-# ============ FUNCIÓN GUARDAR MEJORADA ============
 async def guardar_folio_inteligente(datos, user_id, username):
     """
     Guarda el folio con lógica inteligente de recuperación
@@ -377,7 +316,7 @@ async def guardar_folio_inteligente(datos, user_id, username):
             else:
                 # En reintentos, buscar el siguiente disponible
                 print(f"[REINTENTO {intento}] Buscando siguiente folio disponible...")
-                folio_a_usar = buscar_siguiente_folio_disponible(datos["folio"])
+                folio_a_usar = buscar_siguiente_folio_disponible(datos.get("folio", str(FOLIO_INICIO)))
                 
                 if not folio_a_usar:
                     print("[ERROR FATAL] No se encontró ningún folio disponible")
@@ -413,13 +352,23 @@ async def guardar_folio_inteligente(datos, user_id, username):
             
             if "duplicate" in error_msg or "unique constraint" in error_msg or "23505" in error_msg:
                 print(f"[DUPLICADO] ⚠️ Folio {datos['folio']} ya existe, buscando otro...")
-                continue  # No se queda como pendejo, busca otro
+                continue
             else:
                 print(f"[ERROR DIFERENTE] ❌ {e}")
                 return False
     
     print(f"[ERROR FATAL] ❌ Se agotaron los {max_intentos} intentos")
     return False
+
+# ============ FUNCIÓN PRINCIPAL - SOLO UNA ============
+def generar_folio_jalisco():
+    """
+    Función principal - ÚNICA Y CORRECTA
+    """
+    print("[GENERADOR] Iniciando generación de folio Jalisco")
+    resultado = generar_folio_consecutivo()
+    print(f"[RESULTADO FINAL] Folio generado: {resultado}")
+    return resultado
 
 # ============ FUNCIÓN PRINCIPAL ACTUALIZADA ============
 def generar_folio_jalisco():

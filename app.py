@@ -957,7 +957,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
 
         # ========== LÍNEA CORREGIDA - AQUÍ ESTABA EL ERROR ==========
         try:
-            guardado_exitoso = await guardar_folio_inteligente(datos, message.from_user.id, message.from_user.username)
+            guardado_exitoso = await guardar_folio_con_reintento(datos, message.from_user.id, message.from_user.username)
             
             if not guardado_exitoso:
                 await message.answer(

@@ -51,7 +51,7 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 # Rango de folios consecutivos - CONFIGURACIÓN PRINCIPAL
-FOLIO_INICIO = 7200005678
+FOLIO_INICIO = 9000005678
 FOLIO_FIN = 999999999
 
 # ============ SISTEMA DE FOLIOS CONSECUTIVOS CORREGIDO ============
@@ -81,14 +81,14 @@ def obtener_ultimo_folio_usado():
             
     except Exception as e:
         print(f"[ERROR] Al obtener último folio: {e}")
-        return FOLIO_INICIO - 1
+        return FOLIO_INICIO + 2
 
 def generar_folio_consecutivo():
     """
     Genera el siguiente folio consecutivo disponible
     """
     ultimo_folio = obtener_ultimo_folio_usado()
-    siguiente_folio = ultimo_folio + 1
+    siguiente_folio = ultimo_folio + 3
     
     # Verificar que no exceda el límite máximo
     if siguiente_folio > FOLIO_FIN:
@@ -131,7 +131,7 @@ def buscar_siguiente_folio_disponible(folio_inicial):
             print(f"[FOLIO DISPONIBLE ENCONTRADO] {folio_actual}")
             return str(folio_actual)
         
-        folio_actual += 1
+        folio_actual += 3
         intentos += 1
     
     print(f"[ERROR] No se encontró folio disponible después de {max_intentos} intentos")
@@ -198,7 +198,7 @@ async def guardar_folio_inteligente(datos, user_id, username):
 def generar_folio_jalisco():
     """
     Función principal - ÚNICA Y CORRECTA
-    Genera folios consecutivos desde 7200005678
+    Genera folios consecutivos desde 9000005678
     """
     print("[GENERADOR] Iniciando generación de folio Jalisco")
     resultado = generar_folio_consecutivo()

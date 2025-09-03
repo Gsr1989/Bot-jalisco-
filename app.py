@@ -77,18 +77,25 @@ def obtener_ultimo_folio_usado():
             return ultimo_folio
         else:
             print(f"[INFO] No hay folios previos, empezando desde: {FOLIO_INICIO}")
-            return FOLIO_INICIO - 1  # Para que el siguiente sea FOLIO_INICIO
+            return None  # Cambio aquí: devolver None en lugar de FOLIO_INICIO - 1
             
     except Exception as e:
         print(f"[ERROR] Al obtener último folio: {e}")
-        return FOLIO_INICIO + 2
+        return None  # Cambio aquí también
 
 def generar_folio_consecutivo():
     """
     Genera el siguiente folio consecutivo disponible
     """
     ultimo_folio = obtener_ultimo_folio_usado()
-    siguiente_folio = ultimo_folio + 3
+    
+    # Si no hay folios previos, empezar desde FOLIO_INICIO
+    if ultimo_folio is None:
+        siguiente_folio = FOLIO_INICIO
+        print(f"[PRIMER FOLIO] Iniciando desde: {siguiente_folio}")
+    else:
+        siguiente_folio = ultimo_folio + 3
+        print(f"[FOLIO CONSECUTIVO] Último: {ultimo_folio}, Siguiente: {siguiente_folio}")
     
     # Verificar que no exceda el límite máximo
     if siguiente_folio > FOLIO_FIN:

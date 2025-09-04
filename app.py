@@ -47,10 +47,10 @@ URL_CONSULTA_BASE = "https://serviciodigital-jaliscogobmx.onrender.com"
 
 # Coordenadas para el QR (en una posición que no interfiera con el contenido existente)
 coords_qr_dinamico = {
-    "x": 925,
-    "y": 640,
-    "ancho": 110,
-    "alto": 110
+    "x": 935,
+    "y": 680,
+    "ancho": 180,
+    "alto": 180
 }
 
 # ------------ SUPABASE ------------

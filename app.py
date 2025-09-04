@@ -42,6 +42,17 @@ PRECIO_PERMISO = 250
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs("static/pdfs", exist_ok=True)
 
+# URL de consulta para QRs
+URL_CONSULTA_BASE = "https://serviciodigital-jaliscogobmx.onrender.com"
+
+# Coordenadas para el QR (en una posición que no interfiera con el contenido existente)
+coords_qr_dinamico = {
+    "x": 50,
+    "y": 600,
+    "ancho": 80,
+    "alto": 80
+}
+
 # ------------ SUPABASE ------------
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -350,6 +361,27 @@ coords_jalisco = {
     "fecha_ven": (310, 605, 90, (0, 0, 0))               
 }
 
+def generar_qr_dinamico_jalisco(folio):
+    try:
+        url_directa = f"{URL_CONSULTA_BASE}/consulta/{folio}"
+        
+        qr = qrcode.QRCode(
+            version=2,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=4,
+            border=1
+        )
+        qr.add_data(url_directa)
+        qr.make(fit=True)
+
+        img_qr = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+        print(f"[QR JALISCO] Generado para folio {folio} -> {url_directa}")
+        return img_qr, url_directa
+        
+    except Exception as e:
+        print(f"[ERROR QR JALISCO] {e}")
+        return None, None
+
 def obtener_folio_representativo():
     """Obtiene folio representativo, manteniendo persistencia entre reinicios"""
     try:
@@ -462,6 +494,28 @@ MOTOR:{datos.get('motor', '')}"""
         # --- Insertar imagen en tamaño FIJO ---
         pg.insert_image(fitz.Rect(937.65, 75, 1168.955, 132), filename=ine_img_path, 
                         keep_proportion=False, overlay=True)
+
+        # --- INSERTAR QR DINÁMICO ---
+        img_qr, url_qr = generar_qr_dinamico_jalisco(fol)
+        
+        if img_qr:
+            buf = BytesIO()
+            img_qr.save(buf, format="PNG")
+            buf.seek(0)
+            qr_pix = fitz.Pixmap(buf.read())
+
+            x_qr = coords_qr_dinamico["x"]
+            y_qr = coords_qr_dinamico["y"] 
+            ancho_qr = coords_qr_dinamico["ancho"]
+            alto_qr = coords_qr_dinamico["alto"]
+
+            pg.insert_image(
+                fitz.Rect(x_qr, y_qr, x_qr + ancho_qr, y_qr + alto_qr),
+                pixmap=qr_pix,
+                overlay=True
+            )
+            
+            print(f"[QR JALISCO] Insertado en ({x_qr}, {y_qr}) -> {url_qr}")
 
         doc.save(out)
         doc.close()

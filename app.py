@@ -63,9 +63,10 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 # ============ FOLIOS CONSECUTIVOS: INICIO 900345876, +1, SINCRONIZADO ============
-FOLIO_INICIO = 900345876   # primer folio deseado
-_folio_cursor = FOLIO_INICIO - 1  # el siguiente generado será +1
-_folio_lock = asyncio.Lock()      # para evitar condiciones de carrera
+FOLIO_INICIO = 900_345_876          # 9 dígitos, primer folio
+FOLIO_FIN    = 999_999_999          # 9 dígitos, límite duro
+_folio_cursor = FOLIO_INICIO - 1
+_folio_lock = asyncio.Lock()
 
 def _leer_cursor_local():
     """Lee un cursor local (opcional) para continuidad si no hay DB."""
@@ -988,11 +989,12 @@ async def health():
             "active_timers": len(timers_activos),
             "folio_cursor_actual": _folio_cursor,
             "folio_inicio": FOLIO_INICIO,
-            "continuidad_folios": "Consecutivo desde Supabase/local"
+            "folio_fin": FOLIO_FIN,                # <- agregado para diagnosticar
+            "continuidad_folios": "Consecutivo 9 dígitos desde Supabase/local"
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
-
+        
 @app.get("/status")
 async def status_detail():
     """Endpoint de diagnóstico detallado"""

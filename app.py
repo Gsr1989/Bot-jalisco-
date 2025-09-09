@@ -63,13 +63,12 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 # ============ FOLIOS CONSECUTIVOS: INICIO 900345876, +1, SINCRONIZADO ============
-FOLIO_INICIO = 900_345_876          # 9 dígitos, primer folio
-FOLIO_FIN    = 999_999_999          # 9 dígitos, límite duro
-_folio_cursor = FOLIO_INICIO - 1
-_folio_lock = asyncio.Lock()
+import re
+FOLIO_INICIO = 900345876            # <-- arranque
+_folio_cursor = FOLIO_INICIO - 1    # se irá moviendo con +1
+_folio_lock = asyncio.Lock()        # evita colisiones concurrentes
 
 def _leer_cursor_local():
-    """Lee un cursor local (opcional) para continuidad si no hay DB."""
     try:
         with open("folio_cursor_local.txt") as f:
             return int(f.read().strip())
@@ -85,8 +84,8 @@ def _guardar_cursor_local(valor: int):
 
 def _leer_ultimo_folio_en_db() -> int | None:
     """
-    Devuelve el MAYOR folio NUMÉRICO encontrado en DB >= FOLIO_INICIO.
-    Ignora folios alfanuméricos (p. ej. 'SR2042').
+    Busca en supabase el MAYOR folio numérico (9 dígitos) y >= FOLIO_INICIO.
+    Ignora cualquier folio alfanumérico o con longitud distinta.
     """
     try:
         resp = (
@@ -96,77 +95,69 @@ def _leer_ultimo_folio_en_db() -> int | None:
             .limit(1000)
             .execute()
         )
-        max_num: int | None = None
+        max_num = None
         for row in (resp.data or []):
             s = str(row.get("folio", "")).strip()
-            if re.fullmatch(r"\d+", s):
+            if re.fullmatch(r"\d{9}", s):
                 val = int(s)
                 if val >= FOLIO_INICIO and (max_num is None or val > max_num):
                     max_num = val
-
         if max_num is not None:
-            print(f"[FOLIO][DB] Último folio numérico en DB: {max_num}")
+            print(f"[FOLIO][DB] Último folio numérico: {max_num}")
             return max_num
-
         print("[FOLIO][DB] No se hallaron folios numéricos válidos.")
         return None
-
     except Exception as e:
-        print(f"[ERROR] Consultando último folio en DB (robusto): {e}")
+        print(f"[ERROR] Consultando último folio en DB: {e}")
         return None
 
 async def inicializar_folio_cursor():
     """
-    Define _folio_cursor al arrancar:
-    - Toma el mayor folio de Supabase (si existe y es numérico)
-    - Si no, intenta cursor local
-    - Si no, arranca en FOLIO_INICIO - 1
+    Inicializa el cursor al arrancar:
+      1) Máximo numérico en DB (si existe)
+      2) Cursor local (si existe)
+      3) FOLIO_INICIO - 1 (default)
     """
     global _folio_cursor
     ultimo_db = _leer_ultimo_folio_en_db()
     if ultimo_db is not None:
         _folio_cursor = ultimo_db
         _guardar_cursor_local(_folio_cursor)
-        print(f"[FOLIO] Cursor inicializado desde DB: {_folio_cursor}")
+        print(f"[FOLIO] Cursor desde DB: {_folio_cursor}")
         return
-
     ultimo_local = _leer_cursor_local()
     if ultimo_local is not None and ultimo_local >= (FOLIO_INICIO - 1):
         _folio_cursor = ultimo_local
-        print(f"[FOLIO] Cursor inicializado desde archivo local: {_folio_cursor}")
+        print(f"[FOLIO] Cursor desde archivo: {_folio_cursor}")
     else:
         _folio_cursor = FOLIO_INICIO - 1
-        print(f"[FOLIO] Cursor inicializado al valor base: {_folio_cursor}")
+        print(f"[FOLIO] Cursor al valor base: {_folio_cursor}")
 
 async def generar_folio_consecutivo() -> str:
-    """
-    Genera el siguiente folio consecutivo (+1) de forma segura (con lock).
-    Persiste un cursor local para continuidad si se reinicia.
-    """
+    """Siguiente folio (+1) de forma segura."""
     global _folio_cursor
     async with _folio_lock:
         _folio_cursor += 1
-        if _folio_cursor < FOLIO_INICIO:
+        # clamp a 9 dígitos: si se pasara, reinicia en inicio
+        if _folio_cursor < FOLIO_INICIO or _folio_cursor >= 10**9:
             _folio_cursor = FOLIO_INICIO
         _guardar_cursor_local(_folio_cursor)
-        folio = str(_folio_cursor)
+        folio = f"{_folio_cursor:09d}"  # fuerza 9 dígitos
         print(f"[FOLIO] Generado: {folio}")
         return folio
 
 async def guardar_folio_con_reintento(datos, user_id, username):
     """
-    Inserta el folio en DB con reintentos ante colisiones (UNIQUE).
-    Si hay duplicado, genera el siguiente (+1) y vuelve a intentar.
+    Inserta el folio en DB con reintentos ante colisión UNIQUE.
+    Nunca usa timestamps ni folios largos.
     """
     max_intentos = 8
-    for intento in range(1, max_intentos + 1):
-        # Si el folio aún no existe en datos, genera uno; si ya existe por flujo previo, úsalo.
-        if "folio" not in datos or not datos["folio"]:
+    for _ in range(max_intentos):
+        if "folio" not in datos or not re.fullmatch(r"\d{9}", str(datos["folio"])):
             datos["folio"] = await generar_folio_consecutivo()
-
         try:
             supabase.table("folios_registrados").insert({
-                "folio": datos["folio"],               # se guarda como texto o número, DB decide
+                "folio": datos["folio"],               # guarda como texto/num (según schema)
                 "marca": datos["marca"],
                 "linea": datos["linea"],
                 "anio": datos["anio"],
@@ -182,34 +173,21 @@ async def guardar_folio_con_reintento(datos, user_id, username):
                 "username": username or "Sin username"
             }).execute()
             print(f"[ÉXITO] ✅ Folio {datos['folio']} guardado en DB")
-            # Actualizar cursor local a este último definitivamente usado
             try:
-                valor_int = int(datos["folio"])
-                _guardar_cursor_local(valor_int)
+                _guardar_cursor_local(int(datos["folio"]))
             except Exception:
                 pass
             return True
-
         except Exception as e:
             em = str(e).lower()
             if "duplicate" in em or "unique constraint" in em or "23505" in em:
-                print(f"[DUPLICADO] Folio {datos['folio']} ya existe, intento {intento}/{max_intentos}")
-                # Forzar siguiente folio y reintentar
+                print(f"[DUPLICADO] {datos['folio']} ya existe, intentando siguiente…")
                 datos["folio"] = None
                 continue
             print(f"[ERROR BD] {e}")
             return False
-
     print("[ERROR FATAL] No se pudo guardar tras múltiples intentos")
     return False
-
-def generar_folio_jalisco_sync() -> str:
-    """
-    Versión sincrónica minimal solo para logs puntuales donde se requiera un ID previo;
-    el folio real para DB debe venir de guardar_folio_con_reintento().
-    """
-    valor = max(_folio_cursor + 1, FOLIO_INICIO)
-    return str(valor)
 
 # ------------ TIMER MANAGEMENT - AUTOELIMINACIÓN A LAS 12 HORAS ------------
 # Avisos en los últimos 60, 30 y 10 minutos. Notifica al eliminar.

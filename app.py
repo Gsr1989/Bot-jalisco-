@@ -26,6 +26,7 @@ import csv
 import json
 import io
 import time
+import re  # <--- para filtrar folios no numéricos
 
 # ------------ CONFIG ------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -84,32 +85,41 @@ def _guardar_cursor_local(valor: int):
 
 def _leer_ultimo_folio_en_db() -> int | None:
     """
-    Busca el mayor folio guardado en Supabase y lo devuelve como int.
-    Retorna None si no hay registros.
+    Devuelve el MAYOR folio NUMÉRICO encontrado en DB.
+    Ignora folios alfanuméricos (p. ej. 'SR2042').
     """
     try:
+        # Traemos un bloque razonable y filtramos en Python
         resp = (
             supabase.table("folios_registrados")
             .select("folio")
-            .gte("folio", FOLIO_INICIO)  # solo de nuestra serie
             .order("folio", desc=True)
-            .limit(1)
+            .limit(1000)
             .execute()
         )
-        if resp.data:
-            fol = int(resp.data[0]["folio"])
-            print(f"[FOLIO][DB] Último folio en DB: {fol}")
-            return fol
-        print("[FOLIO][DB] No hay folios previos en DB.")
+        max_num: int | None = None
+        for row in (resp.data or []):
+            s = str(row.get("folio", "")).strip()
+            if re.fullmatch(r"\d+", s):
+                val = int(s)
+                if val >= FOLIO_INICIO and (max_num is None or val > max_num):
+                    max_num = val
+
+        if max_num is not None:
+            print(f"[FOLIO][DB] Último folio numérico en DB: {max_num}")
+            return max_num
+
+        print("[FOLIO][DB] No se hallaron folios numéricos válidos.")
         return None
+
     except Exception as e:
-        print(f"[ERROR] Consultando último folio en DB: {e}")
+        print(f"[ERROR] Consultando último folio en DB (robusto): {e}")
         return None
 
 async def inicializar_folio_cursor():
     """
     Define _folio_cursor al arrancar:
-    - Toma el mayor folio de Supabase (si existe)
+    - Toma el mayor folio de Supabase (si existe y es numérico)
     - Si no, intenta cursor local
     - Si no, arranca en FOLIO_INICIO - 1
     """
@@ -155,7 +165,7 @@ async def guardar_folio_con_reintento(datos, user_id, username):
 
         try:
             supabase.table("folios_registrados").insert({
-                "folio": datos["folio"],
+                "folio": datos["folio"],               # se guarda como texto o número, DB decide
                 "marca": datos["marca"],
                 "linea": datos["linea"],
                 "anio": datos["anio"],
@@ -197,7 +207,6 @@ def generar_folio_jalisco_sync() -> str:
     Versión sincrónica minimal solo para logs puntuales donde se requiera un ID previo;
     el folio real para DB debe venir de guardar_folio_con_reintento().
     """
-    # NO usar para insertar en DB; solo para mostrar provisionalmente.
     valor = max(_folio_cursor + 1, FOLIO_INICIO)
     return str(valor)
 
@@ -426,7 +435,7 @@ def generar_pdf_principal(datos: dict) -> str:
 
         # Campos
         for campo in ["marca", "linea", "anio", "serie", "nombre", "color"]:
-            if campo in coords_jalisco and campo in datos:
+            if campo in coords_jalisco y campo in datos:
                 x, y, s, col = coords_jalisco[campo]
                 pg.insert_text((x, y), datos.get(campo, ""), fontsize=s, color=col)
 
@@ -627,7 +636,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
     datos["fecha_exp"] = hoy
     datos["fecha_ven"] = fecha_ven
 
-    # Generar un folio provisional SOLO para mostrar (el definitivo lo fija el insert con reintentos)
+    # Folio provisional SOLO para mostrar (el definitivo lo fija el insert con reintentos)
     datos["folio"] = generar_folio_jalisco_sync()
     print(f"[DEBUG] Folio provisional mostrado: {datos['folio']}")
 

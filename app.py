@@ -63,8 +63,8 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 # ============ FOLIOS CONSECUTIVOS: INICIO 900345876, +1, SINCRONIZADO ============
-import re
 FOLIO_INICIO = 900345876            # <-- arranque
+FOLIO_FIN = 999_999_999             # solo para diagnóstico
 _folio_cursor = FOLIO_INICIO - 1    # se irá moviendo con +1
 _folio_lock = asyncio.Lock()        # evita colisiones concurrentes
 
@@ -82,7 +82,7 @@ def _guardar_cursor_local(valor: int):
     except Exception as e:
         print(f"[WARN] No se pudo persistir cursor local: {e}")
 
-def _leer_ultimo_folio_en_db() -> int | None:
+def _leer_ultimo_folio_en_db():
     """
     Busca en supabase el MAYOR folio numérico (9 dígitos) y >= FOLIO_INICIO.
     Ignora cualquier folio alfanumérico o con longitud distinta.
@@ -922,17 +922,26 @@ async def lifespan(app: FastAPI):
         if BASE_URL:
             webhook_url = f"{BASE_URL}/webhook"
             await bot.set_webhook(webhook_url, allowed_updates=["message"])
+            print(f"[WEBHOOK] Configurado: {webhook_url}")
             _keep_task = asyncio.create_task(keep_alive())
         else:
             print("[POLLING] Modo sin webhook")
+        print("[SISTEMA] ¡Sistema Digital Jalisco iniciado correctamente!")
+        yield
+    except Exception as e:
+        print(f"[ERROR CRÍTICO] Iniciando sistema: {e}")
         yield
     finally:
+        print("[CIERRE] Cerrando sistema...")
         if _keep_task:
             _keep_task.cancel()
             with suppress(asyncio.CancelledError):
                 await _keep_task
         await bot.session.close()
-        
+
+# *** Crear la app ANTES de usar @app.post / @app.get ***
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="2.0")
+
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try:
@@ -948,8 +957,8 @@ async def telegram_webhook(request: Request):
 async def health():
     try:
         return {
-            "ok": True, 
-            "bot": "Jalisco Permisos Sistema", 
+            "ok": True,
+            "bot": "Jalisco Permisos Sistema",
             "status": "running",
             "version": "2.0",
             "entidad": "Jalisco",
@@ -958,12 +967,12 @@ async def health():
             "active_timers": len(timers_activos),
             "folio_cursor_actual": _folio_cursor,
             "folio_inicio": FOLIO_INICIO,
-            "folio_fin": FOLIO_FIN,                # <- agregado para diagnosticar
+            "folio_fin": FOLIO_FIN,
             "continuidad_folios": "Consecutivo 9 dígitos desde Supabase/local"
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
-        
+
 @app.get("/status")
 async def status_detail():
     """Endpoint de diagnóstico detallado"""

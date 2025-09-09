@@ -625,10 +625,11 @@ async def get_nombre(message: types.Message, state: FSMContext):
     datos = await state.get_data()
     nombre = message.text.strip().upper()
 
+    # Validación básica del nombre
     if len(nombre) < 5 or len(nombre) > 60 or len(nombre.split()) < 2:
         await message.answer("⚠️ Nombre completo inválido (mínimo nombre y apellido, máx. 60 caracteres):")
         return
-    
+
     datos["nombre"] = nombre
 
     # Fechas
@@ -637,40 +638,44 @@ async def get_nombre(message: types.Message, state: FSMContext):
     datos["fecha_exp"] = hoy
     datos["fecha_ven"] = fecha_ven
 
-    # Folio provisional SOLO para mostrar (el definitivo lo fija el insert con reintentos)
-    datos["folio"] = generar_folio_jalisco_sync()
-    print(f"[DEBUG] Folio provisional mostrado: {datos['folio']}")
-
     try:
-        await message.answer(
-            f"🔄 Generando documentación...\n"
-            f"Folio (provisional): {datos['folio']}\n"
-            f"Titular: {nombre}"
-        )
-        p1 = generar_pdf_principal(datos)
-        p2 = generar_pdf_bueno(datos["serie"], hoy, datos["folio"])
-
-        await message.answer_document(
-            FSInputFile(p1),
-            caption=f"📋 PERMISO DE CIRCULACIÓN - JALISCO\nFolio: {datos['folio']}\nVigencia: 30 días"
-        )
-        if p2:
-            await message.answer_document(
-                FSInputFile(p2),
-                caption=f"🧾 Documento complementario\nFolio: {datos['folio']}\nSerie: {datos['serie']}"
-            )
-
-        # Guardar en DB con reintento/colisión (aquí se asegura el folio definitivo)
+        # 1) Guardar en DB con reintento/colisión -> aquí se asigna el folio definitivo de 9 dígitos
         guardado_exitoso = await guardar_folio_con_reintento(datos, message.from_user.id, message.from_user.username)
+
         if not guardado_exitoso:
             await message.answer("❌ No se pudo registrar el folio. Intente de nuevo con /permiso")
             await state.clear()
             return
 
-        # Guardar borrador (best-effort)
+        # Folio definitivo ya en datos["folio"]
+        folio_final = datos["folio"]
+
+        await message.answer(
+            f"🔄 Generando documentación...\n"
+            f"<b>Folio:</b> {folio_final}\n"
+            f"<b>Titular:</b> {nombre}",
+            parse_mode="HTML"
+        )
+
+        # 2) Generar PDFs usando el folio definitivo
+        p1 = generar_pdf_principal(datos)
+        p2 = generar_pdf_bueno(datos["serie"], hoy, folio_final)
+
+        # 3) Enviar documentos
+        await message.answer_document(
+            FSInputFile(p1),
+            caption=f"📋 PERMISO DE CIRCULACIÓN - JALISCO\nFolio: {folio_final}\nVigencia: 30 días"
+        )
+        if p2:
+            await message.answer_document(
+                FSInputFile(p2),
+                caption=f"🧾 Documento complementario\nFolio: {folio_final}\nSerie: {datos['serie']}"
+            )
+
+        # 4) Guardar borrador (best-effort)
         try:
             supabase.table("borradores_registros").insert({
-                "folio": datos["folio"],
+                "folio": folio_final,
                 "entidad": "Jalisco",
                 "numero_serie": datos["serie"],
                 "marca": datos["marca"],
@@ -687,20 +692,20 @@ async def get_nombre(message: types.Message, state: FSMContext):
         except Exception as e:
             print(f"[WARN] Error guardando en borradores: {e}")
 
-        # Iniciar timer de 12 horas
-        await iniciar_timer_eliminacion(message.from_user.id, datos['folio'])
+        # 5) Iniciar timer de 12 horas
+        await iniciar_timer_eliminacion(message.from_user.id, folio_final)
 
-        # Instrucciones
+        # 6) Instrucciones de pago
         await message.answer(
-            f"💰 INSTRUCCIONES DE PAGO\n\n"
-            f"Folio: {datos['folio']}\n"
+            "💰 INSTRUCCIONES DE PAGO\n\n"
+            f"Folio: {folio_final}\n"
             f"Monto: {PRECIO_PERMISO} pesos\n"
-            f"Tiempo límite: 12 horas\n\n"
+            "Tiempo límite: 12 horas\n\n"
             "🏦 TRANSFERENCIA (ejemplo):\n"
             "• Institución: SPIN BY OXXO\n"
             "• Titular: GUILLERMO S.R\n"
             "• Cuenta: 728969000048442454\n"
-            f"• Concepto: Permiso {datos['folio']}\n\n"
+            f"• Concepto: Permiso {folio_final}\n\n"
             "🏪 OXXO (ejemplo):\n"
             "• Referencia: 2242170180214090\n"
             "• Titular: GUILLERMO S.R\n\n"

@@ -916,33 +916,23 @@ async def keep_alive():
 async def lifespan(app: FastAPI):
     global _keep_task
     try:
-        # Inicializar cursor de folios desde DB/local
-        await inicializar_folio_cursor()
+        await inicializar_folio_cursor()  # <= IMPORTANTE
 
-        # Configurar webhook
         await bot.delete_webhook(drop_pending_updates=True)
         if BASE_URL:
             webhook_url = f"{BASE_URL}/webhook"
             await bot.set_webhook(webhook_url, allowed_updates=["message"])
-            print(f"[WEBHOOK] Configurado: {webhook_url}")
             _keep_task = asyncio.create_task(keep_alive())
         else:
             print("[POLLING] Modo sin webhook")
-        print("[SISTEMA] ¡Sistema Digital Jalisco iniciado correctamente!")
-        yield
-    except Exception as e:
-        print(f"[ERROR CRÍTICO] Iniciando sistema: {e}")
         yield
     finally:
-        print("[CIERRE] Cerrando sistema...")
         if _keep_task:
             _keep_task.cancel()
             with suppress(asyncio.CancelledError):
                 await _keep_task
         await bot.session.close()
-
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="2.0")
-
+        
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try:

@@ -427,17 +427,17 @@ def generar_pdf_principal(datos: dict) -> str:
 
         # Fecha actual emisión
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
-        pg.insert_text((478, 804), fecha_actual_str, fontsize=32, color=(0, 0, 0))
+        pg.insert_text((465, 796), fecha_actual_str, fontsize=32, color=(0, 0, 0))
 
         # Folio representativo
         fol_rep = obtener_folio_representativo()
-        pg.insert_text((317, 795), str(fol_rep), fontsize=32, color=(0, 0, 0))
+        pg.insert_text((312, 796), str(fol_rep), fontsize=32, color=(0, 0, 0))
         pg.insert_text((660, 200), str(fol_rep), fontsize=45, color=(0, 0, 0))
         incrementar_folio_representativo(fol_rep)
 
         # Folio con asteriscos
         pg.insert_text((910, 620), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
-        pg.insert_text((1083, 800), "VENTANILLA: DIGITAL", fontsize=14, color=(0, 0, 0))
+        pg.insert_text((950, 800), "VENTANILLA: DIGITAL", fontsize=14, color=(0, 0, 0))
 
         # PDF417 estilo INE
         contenido_ine = f"""FOLIO:{fol}

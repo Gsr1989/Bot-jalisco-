@@ -310,14 +310,14 @@ def obtener_folios_usuario(user_id: int) -> list:
 
 # ============ COORDENADAS Y FUNCIONES PDF ============
 coords_jalisco = {
-    "folio": (975, 391, 14, (0, 0, 0)),
-    "marca": (330, 361, 14, (0, 0, 0)),
-    "serie": (975, 361, 14, (0, 0, 0)),
-    "linea": (330, 391, 14, (0, 0, 0)),
+    "folio": (960, 391, 14, (0, 0, 0)),
+    "marca": (320, 361, 14, (0, 0, 0)),
+    "serie": (960, 361, 14, (0, 0, 0)),
+    "linea": (320, 391, 14, (0, 0, 0)),
     "motor": (300, 260, 14, (0, 0, 0)),
-    "anio": (330, 421, 14, (0, 0, 0)),
-    "color": (330, 451, 14, (0, 0, 0)),
-    "nombre": (330, 331, 14, (0, 0, 0)),
+    "anio": (320, 421, 14, (0, 0, 0)),
+    "color": (320, 451, 14, (0, 0, 0)),
+    "nombre": (320, 331, 14, (0, 0, 0)),
     # FECHAS
     "fecha_exp": (120, 350, 14, (0, 0, 0)),
     "fecha_exp_completa": (120, 370, 14, (0, 0, 0)),
@@ -427,7 +427,7 @@ def generar_pdf_principal(datos: dict) -> str:
 
         # Fecha actual emisión
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
-        pg.insert_text((465, 796), fecha_actual_str, fontsize=32, color=(0, 0, 0))
+        pg.insert_text((455, 796), fecha_actual_str, fontsize=32, color=(0, 0, 0))
 
         # Folio representativo
         fol_rep = obtener_folio_representativo()

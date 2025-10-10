@@ -310,9 +310,9 @@ def obtener_folios_usuario(user_id: int) -> list:
 
 # ============ COORDENADAS Y FUNCIONES PDF ============
 coords_jalisco = {
-    "folio": (960, 391, 14, (0, 0, 0)),
+    "folio": (975, 391, 14, (0, 0, 0)),
     "marca": (330, 361, 14, (0, 0, 0)),
-    "serie": (960, 361, 14, (0, 0, 0)),
+    "serie": (975, 361, 14, (0, 0, 0)),
     "linea": (330, 391, 14, (0, 0, 0)),
     "motor": (300, 260, 14, (0, 0, 0)),
     "anio": (330, 421, 14, (0, 0, 0)),
@@ -321,7 +321,7 @@ coords_jalisco = {
     # FECHAS
     "fecha_exp": (120, 350, 14, (0, 0, 0)),
     "fecha_exp_completa": (120, 370, 14, (0, 0, 0)),
-    "fecha_ven": (310, 605, 90, (0, 0, 0))
+    "fecha_ven": (300, 605, 90, (0, 0, 0))
 }
 
 def generar_qr_dinamico_jalisco(folio):
@@ -431,13 +431,13 @@ def generar_pdf_principal(datos: dict) -> str:
 
         # Folio representativo
         fol_rep = obtener_folio_representativo()
-        pg.insert_text((337, 804), str(fol_rep), fontsize=32, color=(0, 0, 0))
-        pg.insert_text((650, 204), str(fol_rep), fontsize=45, color=(0, 0, 0))
+        pg.insert_text((317, 795), str(fol_rep), fontsize=32, color=(0, 0, 0))
+        pg.insert_text((660, 200), str(fol_rep), fontsize=45, color=(0, 0, 0))
         incrementar_folio_representativo(fol_rep)
 
         # Folio con asteriscos
         pg.insert_text((910, 620), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
-        pg.insert_text((1083, 800), "DIGITAL", fontsize=14, color=(0, 0, 0))
+        pg.insert_text((1083, 800), "VENTANILLA: DIGITAL", fontsize=14, color=(0, 0, 0))
 
         # PDF417 estilo INE
         contenido_ine = f"""FOLIO:{fol}

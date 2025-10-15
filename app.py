@@ -62,102 +62,116 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# ============ FOLIOS CONSECUTIVOS: INICIO 900345876, +1, SINCRONIZADO ============
-FOLIO_INICIO = 900345876            # <-- arranque
-FOLIO_FIN = 999_999_999             # solo para diagnóstico
-_folio_cursor = FOLIO_INICIO - 1    # se irá moviendo con +1
-_folio_lock = asyncio.Lock()        # evita colisiones concurrentes
+# ============ FOLIOS CONSECUTIVOS CON PREFIJO ============
+PREFIJOS_VALIDOS = {
+    "1": 900000000,  # Inicia en 900000000
+    "2": 800000000,  # Inicia en 800000000
+    "3": 700000000,  # Inicia en 700000000
+}
 
-def _leer_cursor_local():
+_folio_cursors = {}  # {prefijo: ultimo_numero}
+_folio_lock = asyncio.Lock()
+
+def _leer_cursors_local():
     try:
-        with open("folio_cursor_local.txt") as f:
-            return int(f.read().strip())
+        with open("folio_cursors.json") as f:
+            data = json.load(f)
+            return {k: int(v) for k, v in data.items()}
     except Exception:
-        return None
+        return {}
 
-def _guardar_cursor_local(valor: int):
+def _guardar_cursors_local(cursors: dict):
     try:
-        with open("folio_cursor_local.txt", "w") as f:
-            f.write(str(valor))
+        with open("folio_cursors.json", "w") as f:
+            json.dump(cursors, f)
     except Exception as e:
-        print(f"[WARN] No se pudo persistir cursor local: {e}")
+        print(f"[WARN] No se pudo persistir cursors: {e}")
 
-def _leer_ultimo_folio_en_db():
-    """
-    Busca en supabase el MAYOR folio numérico (9 dígitos) y >= FOLIO_INICIO.
-    Ignora cualquier folio alfanumérico o con longitud distinta.
-    """
+def _leer_ultimo_folio_por_prefijo(prefijo: str):
+    """Busca el mayor folio numérico de 9 dígitos que comience con el prefijo dado"""
     try:
+        inicio_rango = int(prefijo) * 100000000
+        fin_rango = inicio_rango + 100000000
+        
         resp = (
             supabase.table("folios_registrados")
             .select("folio")
             .order("folio", desc=True)
-            .limit(1000)
+            .limit(2000)
             .execute()
         )
+        
         max_num = None
         for row in (resp.data or []):
             s = str(row.get("folio", "")).strip()
             if re.fullmatch(r"\d{9}", s):
                 val = int(s)
-                if val >= FOLIO_INICIO and (max_num is None or val > max_num):
-                    max_num = val
+                if inicio_rango <= val < fin_rango:
+                    if max_num is None or val > max_num:
+                        max_num = val
+        
         if max_num is not None:
-            print(f"[FOLIO][DB] Último folio numérico: {max_num}")
+            print(f"[FOLIO][DB] Último folio prefijo {prefijo}: {max_num}")
             return max_num
-        print("[FOLIO][DB] No se hallaron folios numéricos válidos.")
-        return None
+        
+        print(f"[FOLIO][DB] No hay folios con prefijo {prefijo}, usando base")
+        return PREFIJOS_VALIDOS[prefijo] - 1
+        
     except Exception as e:
-        print(f"[ERROR] Consultando último folio en DB: {e}")
-        return None
+        print(f"[ERROR] Consultando folios prefijo {prefijo}: {e}")
+        return PREFIJOS_VALIDOS[prefijo] - 1
 
-async def inicializar_folio_cursor():
-    """
-    Inicializa el cursor al arrancar:
-      1) Máximo numérico en DB (si existe)
-      2) Cursor local (si existe)
-      3) FOLIO_INICIO - 1 (default)
-    """
-    global _folio_cursor
-    ultimo_db = _leer_ultimo_folio_en_db()
-    if ultimo_db is not None:
-        _folio_cursor = ultimo_db
-        _guardar_cursor_local(_folio_cursor)
-        print(f"[FOLIO] Cursor desde DB: {_folio_cursor}")
-        return
-    ultimo_local = _leer_cursor_local()
-    if ultimo_local is not None and ultimo_local >= (FOLIO_INICIO - 1):
-        _folio_cursor = ultimo_local
-        print(f"[FOLIO] Cursor desde archivo: {_folio_cursor}")
-    else:
-        _folio_cursor = FOLIO_INICIO - 1
-        print(f"[FOLIO] Cursor al valor base: {_folio_cursor}")
+async def inicializar_folio_cursors():
+    """Inicializa cursores para cada prefijo"""
+    global _folio_cursors
+    
+    cursors_local = _leer_cursors_local()
+    
+    for prefijo in PREFIJOS_VALIDOS.keys():
+        ultimo_db = _leer_ultimo_folio_por_prefijo(prefijo)
+        ultimo_local = cursors_local.get(prefijo)
+        
+        if ultimo_local is not None and ultimo_local > ultimo_db:
+            _folio_cursors[prefijo] = ultimo_local
+            print(f"[FOLIO] Prefijo {prefijo} desde local: {ultimo_local}")
+        else:
+            _folio_cursors[prefijo] = ultimo_db
+            print(f"[FOLIO] Prefijo {prefijo} desde DB: {ultimo_db}")
+    
+    _guardar_cursors_local(_folio_cursors)
 
-async def generar_folio_consecutivo() -> str:
-    """Siguiente folio (+1) de forma segura."""
-    global _folio_cursor
+async def generar_folio_con_prefijo(prefijo: str) -> str:
+    """Genera siguiente folio para el prefijo dado"""
+    global _folio_cursors
+    
+    if prefijo not in PREFIJOS_VALIDOS:
+        prefijo = "1"  # Default
+    
     async with _folio_lock:
-        _folio_cursor += 1
-        # clamp a 9 dígitos: si se pasara, reinicia en inicio
-        if _folio_cursor < FOLIO_INICIO or _folio_cursor >= 10**9:
-            _folio_cursor = FOLIO_INICIO
-        _guardar_cursor_local(_folio_cursor)
-        folio = f"{_folio_cursor:09d}"  # fuerza 9 dígitos
-        print(f"[FOLIO] Generado: {folio}")
+        base = PREFIJOS_VALIDOS[prefijo]
+        limite = base + 100000000
+        
+        _folio_cursors[prefijo] += 1
+        
+        if _folio_cursors[prefijo] >= limite:
+            _folio_cursors[prefijo] = base
+        
+        _guardar_cursors_local(_folio_cursors)
+        folio = f"{_folio_cursors[prefijo]:09d}"
+        print(f"[FOLIO] Generado prefijo {prefijo}: {folio}")
         return folio
 
-async def guardar_folio_con_reintento(datos, user_id, username):
-    """
-    Inserta el folio en DB con reintentos ante colisión UNIQUE.
-    Nunca usa timestamps ni folios largos.
-    """
-    max_intentos = 8
-    for _ in range(max_intentos):
-        if "folio" not in datos or not re.fullmatch(r"\d{9}", str(datos["folio"])):
-            datos["folio"] = await generar_folio_consecutivo()
+async def guardar_folio_con_reintento(datos, user_id, username, prefijo="1"):
+    """Inserta el folio en DB con reintentos ante colisión"""
+    max_intentos = 20
+    
+    for intento in range(max_intentos):
+        if "folio" not in datos or not re.fullmatch(r"\d{9}", str(datos.get("folio", ""))):
+            datos["folio"] = await generar_folio_con_prefijo(prefijo)
+        
         try:
             supabase.table("folios_registrados").insert({
-                "folio": datos["folio"],               # guarda como texto/num (según schema)
+                "folio": datos["folio"],
                 "marca": datos["marca"],
                 "linea": datos["linea"],
                 "anio": datos["anio"],
@@ -172,58 +186,55 @@ async def guardar_folio_con_reintento(datos, user_id, username):
                 "user_id": user_id,
                 "username": username or "Sin username"
             }).execute()
-            print(f"[ÉXITO] ✅ Folio {datos['folio']} guardado en DB")
-            try:
-                _guardar_cursor_local(int(datos["folio"]))
-            except Exception:
-                pass
+            
+            print(f"[ÉXITO] ✅ Folio {datos['folio']} guardado (intento {intento + 1})")
             return True
+            
         except Exception as e:
             em = str(e).lower()
             if "duplicate" in em or "unique constraint" in em or "23505" in em:
-                print(f"[DUPLICADO] {datos['folio']} ya existe, intentando siguiente…")
+                print(f"[DUPLICADO] {datos['folio']} existe, generando siguiente (intento {intento + 1}/{max_intentos})")
                 datos["folio"] = None
+                await asyncio.sleep(0.1)  # Pequeña pausa para evitar colisiones
                 continue
+            
             print(f"[ERROR BD] {e}")
             return False
-    print("[ERROR FATAL] No se pudo guardar tras múltiples intentos")
+    
+    print(f"[ERROR FATAL] No se pudo guardar tras {max_intentos} intentos")
     return False
 
-# ------------ TIMER MANAGEMENT - AUTOELIMINACIÓN A LAS 12 HORAS ------------
-# Avisos en los últimos 60, 30 y 10 minutos. Notifica al eliminar.
-timers_activos = {}  # {folio: {"task": task, "user_id": user_id, "start_time": datetime}}
-user_folios = {}     # {user_id: [lista_de_folios_activos]}
-pending_comprobantes = {}  # {user_id: folio} para usuarios esperando especificar folio
+# ------------ TIMER MANAGEMENT - 24 HORAS ------------
+timers_activos = {}
+user_folios = {}
+pending_comprobantes = {}
 
-TOTAL_MINUTOS_TIMER = 12 * 60  # 720
+TOTAL_MINUTOS_TIMER = 24 * 60  # 1440 minutos = 24 horas
 
 async def eliminar_folio_automatico(folio: str):
-    """Elimina folio automáticamente después de 12 horas y avisa."""
+    """Elimina folio automáticamente después de 24 horas"""
     try:
         user_id = None
         if folio in timers_activos:
             user_id = timers_activos[folio]["user_id"]
         
-        # Eliminar de base de datos
         supabase.table("folios_registrados").delete().eq("folio", folio).execute()
         supabase.table("borradores_registros").delete().eq("folio", folio).execute()
         
-        # Notificar al usuario si está disponible
         if user_id:
             await bot.send_message(
                 user_id,
                 f"⏰ TIEMPO AGOTADO - ESTADO DE JALISCO\n\n"
-                f"El folio {folio} ha sido eliminado del sistema por no completar el pago en 12 horas.\n\n"
+                f"El folio {folio} ha sido eliminado del sistema por no completar el pago en 24 horas.\n\n"
                 f"Para iniciar un nuevo trámite use /permiso."
             )
         
-        # Limpiar timers
         limpiar_timer_folio(folio)
     except Exception as e:
         print(f"Error eliminando folio {folio}: {e}")
 
 async def enviar_recordatorio(user_id: int, folio: str, minutos_restantes: int):
-    """Recordatorios de la última hora."""
+    """Recordatorios de la última hora"""
     try:
         await bot.send_message(
             user_id,
@@ -236,11 +247,12 @@ async def enviar_recordatorio(user_id: int, folio: str, minutos_restantes: int):
         print(f"Error enviando recordatorio a {user_id}: {e}")
 
 async def iniciar_timer_eliminacion(user_id: int, folio: str):
-    """Inicia el timer de 12 horas con avisos 60/30/10 min antes del fin."""
+    """Timer de 24 horas con avisos 60/30/10 min antes del fin"""
     async def timer_task():
         print(f"[TIMER] Iniciado para folio {folio}, usuario {user_id}")
-        # Dormir 11 horas (660 min)
-        await asyncio.sleep(11 * 3600)
+        
+        # Dormir 23 horas (1380 min)
+        await asyncio.sleep(23 * 3600)
 
         # Aviso a 60 min
         if folio not in timers_activos: return
@@ -262,7 +274,6 @@ async def iniciar_timer_eliminacion(user_id: int, folio: str):
             print(f"[TIMER] Expirado para folio {folio} - eliminando")
             await eliminar_folio_automatico(folio)
     
-    # Crear y guardar el task
     task = asyncio.create_task(timer_task())
     timers_activos[folio] = {
         "task": task,
@@ -270,20 +281,18 @@ async def iniciar_timer_eliminacion(user_id: int, folio: str):
         "start_time": datetime.now()
     }
     
-    # Agregar folio a la lista del usuario
     if user_id not in user_folios:
         user_folios[user_id] = []
     user_folios[user_id].append(folio)
     
-    print(f"[SISTEMA] Timer iniciado para folio {folio}, total timers activos: {len(timers_activos)}")
+    print(f"[SISTEMA] Timer 24h iniciado para folio {folio}")
 
 def cancelar_timer_folio(folio: str):
-    """Cancela el timer de un folio específico cuando el usuario paga"""
+    """Cancela el timer cuando el usuario paga"""
     if folio in timers_activos:
         timers_activos[folio]["task"].cancel()
         user_id = timers_activos[folio]["user_id"]
         
-        # Remover de estructuras de datos
         del timers_activos[folio]
         
         if user_id in user_folios and folio in user_folios[user_id]:
@@ -294,7 +303,7 @@ def cancelar_timer_folio(folio: str):
         print(f"[SISTEMA] Timer cancelado para folio {folio}")
 
 def limpiar_timer_folio(folio: str):
-    """Limpia todas las referencias de un folio tras expirar"""
+    """Limpia referencias tras expirar"""
     if folio in timers_activos:
         user_id = timers_activos[folio]["user_id"]
         del timers_activos[folio]
@@ -318,7 +327,6 @@ coords_jalisco = {
     "anio": (320, 421, 14, (0, 0, 0)),
     "color": (320, 451, 14, (0, 0, 0)),
     "nombre": (320, 331, 14, (0, 0, 0)),
-    # FECHAS
     "fecha_exp": (120, 350, 14, (0, 0, 0)),
     "fecha_exp_completa": (120, 370, 14, (0, 0, 0)),
     "fecha_ven": (300, 605, 90, (0, 0, 0))
@@ -346,7 +354,7 @@ def generar_qr_dinamico_jalisco(folio):
         return None, None
 
 def obtener_folio_representativo():
-    """Obtiene folio representativo, manteniendo persistencia entre reinicios"""
+    """Obtiene folio representativo"""
     try:
         with open("folio_representativo.txt") as f:
             return int(f.read().strip())
@@ -394,52 +402,55 @@ class PermisoForm(StatesGroup):
     color = State()
     nombre = State()
 
-# ============ PDF PRINCIPAL (COMPLETO) ============
-def generar_pdf_principal(datos: dict) -> str:
-    """Genera el PDF principal completo con todos los datos"""
+# ============ GENERACIÓN PDF UNIFICADO ============
+def generar_pdf_unificado(datos: dict) -> str:
+    """Genera UN SOLO PDF que combina jalisco1.pdf Y jalisco.pdf"""
     fol = datos["folio"]
     fecha_exp = datos["fecha_exp"]
     fecha_ven = datos["fecha_ven"]
     
-    # === FECHA Y HORA ACTUAL DE MÉXICO ===
     zona_mexico = pytz.timezone("America/Mexico_City")
     _ = datetime.now(zona_mexico)
     
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    out = os.path.join(OUTPUT_DIR, f"{fol}_jalisco1.pdf")
+    out = os.path.join(OUTPUT_DIR, f"{fol}_completo.pdf")
     
     try:
-        doc = fitz.open(PLANTILLA_PDF)
-        pg = doc[0]
-
+        # Abrir ambas plantillas
+        doc1 = fitz.open(PLANTILLA_PDF)      # jalisco1.pdf (completo)
+        doc2 = fitz.open(PLANTILLA_BUENO)    # jalisco.pdf (simple)
+        
+        # ===== PROCESAR PRIMERA PÁGINA (jalisco1.pdf) =====
+        pg1 = doc1[0]
+        
         # Campos
         for campo in ["marca", "linea", "anio", "serie", "nombre", "color"]:
             if campo in coords_jalisco and campo in datos:
                 x, y, s, col = coords_jalisco[campo]
-                pg.insert_text((x, y), datos.get(campo, ""), fontsize=s, color=col)
-
+                pg1.insert_text((x, y), datos.get(campo, ""), fontsize=s, color=col)
+        
         # Fecha de vencimiento
-        pg.insert_text(coords_jalisco["fecha_ven"][:2], fecha_ven.strftime("%d/%m/%Y"),
+        pg1.insert_text(coords_jalisco["fecha_ven"][:2], fecha_ven.strftime("%d/%m/%Y"),
                        fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
-
+        
         # Folio
-        pg.insert_text((930, 391), fol, fontsize=14, color=(0, 0, 0))
-
+        pg1.insert_text((930, 391), fol, fontsize=14, color=(0, 0, 0))
+        
         # Fecha actual emisión
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
-        pg.insert_text((455, 796), fecha_actual_str, fontsize=32, color=(0, 0, 0))
-
+        pg1.insert_text((455, 796), fecha_actual_str, fontsize=32, color=(0, 0, 0))
+        
         # Folio representativo
         fol_rep = obtener_folio_representativo()
-        pg.insert_text((312, 796), str(fol_rep), fontsize=32, color=(0, 0, 0))
-        pg.insert_text((660, 200), str(fol_rep), fontsize=45, color=(0, 0, 0))
+        pg1.insert_text((312, 796), str(fol_rep), fontsize=32, color=(0, 0, 0))
+        pg1.insert_text((660, 200), str(fol_rep), fontsize=45, color=(0, 0, 0))
         incrementar_folio_representativo(fol_rep)
-
+        
         # Folio con asteriscos
-        pg.insert_text((910, 620), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
-        pg.insert_text((950, 800), "VENTANILLA: DIGITAL", fontsize=14, color=(0, 0, 0))
-
-        # PDF417 estilo INE
+        pg1.insert_text((910, 620), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
+        pg1.insert_text((950, 800), "VENTANILLA: DIGITAL", fontsize=14, color=(0, 0, 0))
+        
+        # PDF417
         contenido_ine = f"""FOLIO:{fol}
 MARCA:{datos.get('marca', '')}
 LINEA:{datos.get('linea', '')}
@@ -448,9 +459,9 @@ SERIE:{datos.get('serie', '')}
 MOTOR:{datos.get('motor', '')}"""
         ine_img_path = os.path.join(OUTPUT_DIR, f"{fol}_inecode.png")
         generar_codigo_ine(contenido_ine, ine_img_path)
-        pg.insert_image(fitz.Rect(937.65, 75, 1168.955, 132),
+        pg1.insert_image(fitz.Rect(937.65, 75, 1168.955, 132),
                         filename=ine_img_path, keep_proportion=False, overlay=True)
-
+        
         # QR dinámico
         img_qr, url_qr = generar_qr_dinamico_jalisco(fol)
         if img_qr:
@@ -462,18 +473,36 @@ MOTOR:{datos.get('motor', '')}"""
             y_qr = coords_qr_dinamico["y"]
             ancho_qr = coords_qr_dinamico["ancho"]
             alto_qr = coords_qr_dinamico["alto"]
-            pg.insert_image(
+            pg1.insert_image(
                 fitz.Rect(x_qr, y_qr, x_qr + ancho_qr, y_qr + alto_qr),
                 pixmap=qr_pix,
                 overlay=True
             )
-            print(f"[QR JALISCO] Insertado en ({x_qr}, {y_qr}) -> {url_qr}")
-
-        doc.save(out)
-        doc.close()
-        print(f"[PDF] Generado exitosamente: {out}")
+            print(f"[QR JALISCO] Insertado en página 1")
+        
+        # ===== PROCESAR SEGUNDA PÁGINA (jalisco.pdf) =====
+        pg2 = doc2[0]
+        fecha_hora_str = fecha_exp.strftime("%d/%m/%Y %H:%M")
+        pg2.insert_text((380, 195), fecha_hora_str, fontsize=10, fontname="helv", color=(0, 0, 0))
+        pg2.insert_text((380, 290), datos['serie'], fontsize=10, fontname="helv", color=(0, 0, 0))
+        
+        # ===== UNIR AMBAS PÁGINAS EN UN SOLO PDF =====
+        doc_final = fitz.open()
+        doc_final.insert_pdf(doc1)  # Inserta jalisco1.pdf
+        doc_final.insert_pdf(doc2)  # Inserta jalisco.pdf
+        
+        # Guardar
+        doc_final.save(out)
+        
+        # Cerrar todos
+        doc_final.close()
+        doc1.close()
+        doc2.close()
+        
+        print(f"[PDF UNIFICADO] Generado exitosamente: {out} (2 páginas)")
+        
     except Exception as e:
-        print(f"[ERROR] Generando PDF principal: {e}")
+        print(f"[ERROR] Generando PDF unificado: {e}")
         doc_fallback = fitz.open()
         page = doc_fallback.new_page()
         page.insert_text((50, 50), f"ERROR - Folio: {fol}", fontsize=12)
@@ -481,22 +510,6 @@ MOTOR:{datos.get('motor', '')}"""
         doc_fallback.close()
     
     return out
-
-def generar_pdf_bueno(serie: str, fecha: datetime, folio: str) -> str:
-    """Genera el PDF simple con fecha+hora y serie"""
-    try:
-        doc = fitz.open(PLANTILLA_BUENO)
-        page = doc[0]
-        fecha_hora_str = fecha.strftime("%d/%m/%Y %H:%M")
-        page.insert_text((380, 195), fecha_hora_str, fontsize=10, fontname="helv", color=(0, 0, 0))
-        page.insert_text((380, 290), serie, fontsize=10, fontname="helv", color=(0, 0, 0))
-        filename = f"{OUTPUT_DIR}/{folio}_bueno.pdf"
-        doc.save(filename)
-        doc.close()
-        return filename
-    except Exception as e:
-        print(f"[ERROR] Generando PDF bueno: {e}")
-        return None
 
 # ------------ HANDLERS PRINCIPALES ------------
 @dp.message(Command("start"))
@@ -506,14 +519,14 @@ async def start_cmd(message: types.Message, state: FSMContext):
         "🏛️ BIENVENIDO AL SISTEMA DIGITAL DEL ESTADO DE JALISCO\n"
         "Plataforma oficial para la gestión de permisos de circulación vehicular\n\n"
         "📋 Inversión por servicio: Tarifa oficial establecida\n"
-        "⏰ Plazo para liquidación: 12 horas a partir de la emisión\n"
+        "⏰ Plazo para liquidación: 24 horas a partir de la emisión\n"
         "💳 Modalidades de pago: Transferencia bancaria y OXXO\n\n"
         "Para iniciar use /permiso\n\n"
-        "⚠️ Su folio se elimina automáticamente si no se paga en 12 horas.",
+        "⚠️ Su folio se elimina automáticamente si no se paga en 24 horas.",
         
         "🌟 SISTEMA GUBERNAMENTAL DE JALISCO - SERVICIO DIGITAL\n"
         "💰 Concepto: Permiso temporal de circulación\n"
-        "🕐 Tiempo disponible para pago: 12 horas (720 min)\n"
+        "🕐 Tiempo disponible para pago: 24 horas (1440 min)\n"
         "🏪 Puntos de pago autorizados: Red OXXO y transferencias bancarias\n\n"
         "Comando: /permiso"
     ]
@@ -521,16 +534,15 @@ async def start_cmd(message: types.Message, state: FSMContext):
 
 @dp.message(Command("permiso"))
 async def permiso_cmd(message: types.Message, state: FSMContext):
-    # Verificar folios activos del usuario
     folios_activos = obtener_folios_usuario(message.from_user.id)
     mensaje_folios = ""
     if folios_activos:
-        mensaje_folios = f"\n\n📋 FOLIOS EN PROCESO: {', '.join(folios_activos)}\n(Cada expediente tiene su cronómetro independiente de 12 horas)"
+        mensaje_folios = f"\n\n📋 FOLIOS EN PROCESO: {', '.join(folios_activos)}\n(Cada expediente tiene su cronómetro independiente de 24 horas)"
 
     frases_inicio = [
         f"🚗 SOLICITUD DE PERMISO DE CIRCULACIÓN - ESTADO DE JALISCO\n\n"
         f"💰 Inversión requerida: Según tarifa oficial\n"
-        f"⏰ Plazo para completar el pago: 12 horas\n\n"
+        f"⏰ Plazo para completar el pago: 24 horas\n\n"
         f"Al continuar, acepta que su folio será eliminado si no paga en el tiempo establecido."
         f"{mensaje_folios}\n\n"
         f"Primer paso: Indique la MARCA del vehículo:",
@@ -597,7 +609,6 @@ async def get_color(message: types.Message, state: FSMContext):
     await state.update_data(color=color)
     await message.answer("Indique el NOMBRE COMPLETO del propietario:")
     await state.set_state(PermisoForm.nombre)
-
 @dp.message(PermisoForm.nombre)
 async def get_nombre(message: types.Message, state: FSMContext):
     datos = await state.get_data()
@@ -609,15 +620,16 @@ async def get_nombre(message: types.Message, state: FSMContext):
 
     datos["nombre"] = nombre
 
-    # Fechas
     hoy = datetime.now()
     fecha_ven = hoy + timedelta(days=30)
     datos["fecha_exp"] = hoy
     datos["fecha_ven"] = fecha_ven
 
     try:
-        # 1) GUARDAR primero -> aquí se define el folio definitivo de 9 dígitos
-        ok = await guardar_folio_con_reintento(datos, message.from_user.id, message.from_user.username)
+        # Determinar prefijo (puedes cambiarlo según lógica de negocio)
+        prefijo = "1"  # Por defecto usa prefijo 1
+        
+        ok = await guardar_folio_con_reintento(datos, message.from_user.id, message.from_user.username, prefijo)
         if not ok:
             await message.answer("❌ No se pudo registrar el folio. Intenta de nuevo con /permiso")
             await state.clear()
@@ -632,21 +644,15 @@ async def get_nombre(message: types.Message, state: FSMContext):
             parse_mode="HTML"
         )
 
-        # 2) Generar PDFs con el folio definitivo
-        p1 = generar_pdf_principal(datos)
-        p2 = generar_pdf_bueno(datos['serie'], hoy, folio_final)
+        # Generar PDF UNIFICADO (ambas plantillas en un solo archivo)
+        pdf_unificado = generar_pdf_unificado(datos)
 
         await message.answer_document(
-            FSInputFile(p1),
-            caption=f"📋 PERMISO DE CIRCULACIÓN - JALISCO\nFolio: {folio_final}\nVigencia: 30 días"
+            FSInputFile(pdf_unificado),
+            caption=f"📋 PERMISO DE CIRCULACIÓN - JALISCO (COMPLETO)\nFolio: {folio_final}\nVigencia: 30 días\n\n✅ Documento con ambas páginas unificadas"
         )
-        if p2:
-            await message.answer_document(
-                FSInputFile(p2),
-                caption=f"🧾 Documento complementario\nFolio: {folio_final}\nSerie: {datos['serie']}"
-            )
 
-        # 3) Borradores (best-effort)
+        # Borradores (best-effort)
         try:
             supabase.table("borradores_registros").insert({
                 "folio": folio_final,
@@ -666,15 +672,15 @@ async def get_nombre(message: types.Message, state: FSMContext):
         except Exception as e:
             print(f"[WARN] Error guardando en borradores: {e}")
 
-        # 4) Timer 12 horas
+        # Timer 24 horas
         await iniciar_timer_eliminacion(message.from_user.id, folio_final)
 
-        # 5) Instrucciones
+        # Instrucciones
         await message.answer(
             "💰 INSTRUCCIONES DE PAGO\n\n"
             f"Folio: {folio_final}\n"
             f"Monto: {PRECIO_PERMISO} pesos\n"
-            "Tiempo límite: 12 horas\n\n"
+            "Tiempo límite: 24 horas\n\n"
             "🏦 TRANSFERENCIA (ejemplo):\n"
             "• Institución: SPIN BY OXXO\n"
             "• Titular: GUILLERMO S.R\n"
@@ -684,7 +690,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
             "• Referencia: 2242170180214090\n"
             "• Titular: GUILLERMO S.R\n\n"
             "📸 Envía la foto del comprobante para validar.\n"
-            "⚠️ Si no pagas en 12 horas, el folio se elimina automáticamente."
+            "⚠️ Si no pagas en 24 horas, el folio se elimina automáticamente."
         )
 
     except Exception as e:
@@ -870,7 +876,7 @@ async def ver_folios_activos(message: types.Message):
         await message.answer(
             f"📋 TUS EXPEDIENTES ACTIVOS ({len(folios_usuario)})\n\n" +
             '\n'.join(lista_folios) +
-            f"\n\n⏰ Cada folio tiene cronómetro independiente de 12 horas.\n"
+            f"\n\n⏰ Cada folio tiene cronómetro independiente de 24 horas.\n"
             f"📸 Envía la foto del comprobante para validar."
         )
     except Exception as e:
@@ -885,7 +891,7 @@ async def responder_costo(message: types.Message):
     try:
         await message.answer(
             "💰 Costo según tarifa oficial.\n"
-            "⏰ Límite de pago: 12 horas.\n"
+            "⏰ Límite de pago: 24 horas.\n"
             "📋 Vigencia del permiso: 30 días.\n"
             "Para iniciar: /permiso"
         )
@@ -916,7 +922,7 @@ async def keep_alive():
 async def lifespan(app: FastAPI):
     global _keep_task
     try:
-        await inicializar_folio_cursor()  # <= IMPORTANTE
+        await inicializar_folio_cursors()  # <= IMPORTANTE: Inicializa cursores por prefijo
 
         await bot.delete_webhook(drop_pending_updates=True)
         if BASE_URL:
@@ -927,6 +933,7 @@ async def lifespan(app: FastAPI):
         else:
             print("[POLLING] Modo sin webhook")
         print("[SISTEMA] ¡Sistema Digital Jalisco iniciado correctamente!")
+        print(f"[PREFIJOS] Configurados: {list(PREFIJOS_VALIDOS.keys())}")
         yield
     except Exception as e:
         print(f"[ERROR CRÍTICO] Iniciando sistema: {e}")
@@ -940,7 +947,7 @@ async def lifespan(app: FastAPI):
         await bot.session.close()
 
 # *** Crear la app ANTES de usar @app.post / @app.get ***
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="2.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="3.0")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -960,15 +967,19 @@ async def health():
             "ok": True,
             "bot": "Jalisco Permisos Sistema",
             "status": "running",
-            "version": "2.0",
+            "version": "3.0",
             "entidad": "Jalisco",
             "vigencia": "30 días",
-            "timer_eliminacion": "12 horas",
+            "timer_eliminacion": "24 horas",
             "active_timers": len(timers_activos),
-            "folio_cursor_actual": _folio_cursor,
-            "folio_inicio": FOLIO_INICIO,
-            "folio_fin": FOLIO_FIN,
-            "continuidad_folios": "Consecutivo 9 dígitos desde Supabase/local"
+            "prefijos_configurados": list(PREFIJOS_VALIDOS.keys()),
+            "cursors_actuales": _folio_cursors,
+            "caracteristicas": [
+                "PDF unificado (2 páginas en 1 archivo)",
+                "Folios por prefijo con continuidad desde Supabase",
+                "Timer 24 horas con avisos",
+                "Reintentos automáticos ante duplicados"
+            ]
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -978,15 +989,17 @@ async def status_detail():
     """Endpoint de diagnóstico detallado"""
     try:
         return {
-            "sistema": "Jalisco Digital v2.0 - Folios consecutivos",
+            "sistema": "Jalisco Digital v3.0 - PDF Unificado + Folios con Prefijo",
             "entidad": "Jalisco",
             "vigencia_dias": 30,
-            "tiempo_eliminacion": "12 horas con avisos 60/30/10",
+            "tiempo_eliminacion": "24 horas con avisos 60/30/10",
             "total_timers_activos": len(timers_activos),
             "folios_con_timer": list(timers_activos.keys()),
             "usuarios_con_folios": len(user_folios),
-            "continuidad": "Folios desde último en DB; +1 garantizado con lock",
-            "folio_cursor": _folio_cursor,
+            "prefijos_disponibles": PREFIJOS_VALIDOS,
+            "cursors_por_prefijo": _folio_cursors,
+            "pdf_output": "UN SOLO archivo con ambas plantillas (2 páginas)",
+            "continuidad": "Folios desde último en DB por prefijo; +1 con lock y reintentos",
             "timestamp": datetime.now().isoformat(),
             "status": "Operacional"
         }
@@ -998,7 +1011,8 @@ if __name__ == '__main__':
         import uvicorn
         port = int(os.getenv("PORT", 8000))
         print(f"[ARRANQUE] Iniciando servidor en puerto {port}")
-        print(f"[SISTEMA] Folios consecutivos desde {FOLIO_INICIO} - Auto-eliminación: 12 horas")
+        print(f"[SISTEMA] Folios con prefijos - Timer: 24 horas - PDF Unificado")
+        print(f"[PREFIJOS] {PREFIJOS_VALIDOS}")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}")

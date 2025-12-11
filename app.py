@@ -43,10 +43,10 @@ os.makedirs("static/pdfs", exist_ok=True)
 URL_CONSULTA_BASE = "https://serviciodigital-jaliscogobmx.onrender.com"
 
 coords_qr_dinamico = {
-    "x": 1000,
-    "y": 600,
-    "ancho": 155,
-    "alto": 155
+    "x": 950,
+    "y": 700,
+    "ancho": 150,
+    "alto": 150
 }
 
 # ------------ SUPABASE ------------
@@ -309,7 +309,7 @@ def obtener_folios_usuario(user_id: int) -> list:
 
 # ============ COORDENADAS Y FUNCIONES PDF ============
 coords_jalisco = {
-    "folio": (990, 413, 14, (0, 0, 0)),
+    "folio": (995, 390, 14, (0, 0, 0)),
     "marca": (320, 391, 14, (0, 0, 0)),
     "serie": (1005, 392, 14, (0, 0, 0)),
     "linea": (320, 421, 14, (0, 0, 0)),
@@ -420,15 +420,15 @@ def generar_pdfs_separados(datos: dict) -> tuple:
         pg1.insert_text((930, 451), fol, fontsize=14, color=(0, 0, 0))
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
-        pg1.insert_text((445, 890), fecha_actual_str, fontsize=33, color=(0, 0, 0))
+        pg1.insert_text((445, 880), fecha_actual_str, fontsize=33, color=(0, 0, 0))
         
         fol_rep = obtener_folio_representativo()
-        pg1.insert_text((305, 890), str(fol_rep), fontsize=32, color=(0, 0, 0))
+        pg1.insert_text((305, 880), str(fol_rep), fontsize=32, color=(0, 0, 0))
         pg1.insert_text((605, 203), str(fol_rep), fontsize=55, color=(0, 0, 0))
         incrementar_folio_representativo(fol_rep)
         
-        pg1.insert_text((910, 720), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
-        pg1.insert_text((950, 860), "VENTANILLA: DIGITAL", fontsize=14, color=(0, 0, 0))
+        pg1.insert_text((910, 710), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
+        pg1.insert_text((950, 870), "VENTANILLA: DIGITAL", fontsize=14, color=(0, 0, 0))
         
         contenido_ine = f"""FOLIO:{fol}
 MARCA:{datos.get('marca', '')}

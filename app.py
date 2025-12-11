@@ -309,9 +309,9 @@ def obtener_folios_usuario(user_id: int) -> list:
 
 # ============ COORDENADAS Y FUNCIONES PDF ============
 coords_jalisco = {
-    "folio": (970, 421, 14, (0, 0, 0)),
+    "folio": (990, 413, 14, (0, 0, 0)),
     "marca": (320, 391, 14, (0, 0, 0)),
-    "serie": (970, 391, 14, (0, 0, 0)),
+    "serie": (980, 392, 14, (0, 0, 0)),
     "linea": (320, 421, 14, (0, 0, 0)),
     "motor": (300, 260, 14, (0, 0, 0)),
     "anio": (320, 451, 14, (0, 0, 0)),
@@ -319,7 +319,7 @@ coords_jalisco = {
     "nombre": (320, 361, 14, (0, 0, 0)),
     "fecha_exp": (120, 350, 14, (0, 0, 0)),
     "fecha_exp_completa": (120, 370, 14, (0, 0, 0)),
-    "fecha_ven": (300, 605, 90, (0, 0, 0))
+    "fecha_ven": (280, 625, 90, (0, 0, 0))
 }
 
 def generar_qr_dinamico_jalisco(folio):
@@ -423,8 +423,8 @@ def generar_pdfs_separados(datos: dict) -> tuple:
         pg1.insert_text((445, 810), fecha_actual_str, fontsize=33, color=(0, 0, 0))
         
         fol_rep = obtener_folio_representativo()
-        pg1.insert_text((290, 796), str(fol_rep), fontsize=32, color=(0, 0, 0))
-        pg1.insert_text((600, 200), str(fol_rep), fontsize=47, color=(0, 0, 0))
+        pg1.insert_text((280, 850), str(fol_rep), fontsize=32, color=(0, 0, 0))
+        pg1.insert_text((605, 200), str(fol_rep), fontsize=53, color=(0, 0, 0))
         incrementar_folio_representativo(fol_rep)
         
         pg1.insert_text((910, 620), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")

@@ -154,7 +154,7 @@ async def generar_folio_con_prefijo(prefijo: str) -> str:
         return folio
 
 async def guardar_folio_con_reintento(datos, user_id, username, prefijo="1"):
-    max_intentos = 10000
+    max_intentos = 10000000
     
     for intento in range(max_intentos):
         if "folio" not in datos or not re.fullmatch(r"\d{9}", str(datos.get("folio", ""))):
@@ -427,7 +427,7 @@ def generar_pdfs_separados(datos: dict) -> tuple:
         pg1.insert_text((605, 203), str(fol_rep), fontsize=55, color=(0, 0, 0))
         incrementar_folio_representativo(fol_rep)
         
-        pg1.insert_text((910, 710), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
+        pg1.insert_text((920, 700), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
         pg1.insert_text((950, 870), "VENTANILLA: DIGITAL", fontsize=14, color=(0, 0, 0))
         
         contenido_ine = f"""FOLIO:{fol}

@@ -389,9 +389,9 @@ class PermisoForm(StatesGroup):
     color = State()
     nombre = State()
 
-# ============ GENERACIÓN DE 2 PDFs SEPARADOS ============
-def generar_pdfs_separados(datos: dict) -> tuple:
-    """Genera DOS PDFs independientes con el mismo nombre base"""
+# ============ GENERACIÓN PDF UNIFICADO (2 PÁGINAS EN 1 ARCHIVO) ============
+def generar_pdf_unificado(datos: dict) -> str:
+    """Genera UN SOLO PDF con ambas plantillas (2 páginas)"""
     fol = datos["folio"]
     fecha_exp = datos["fecha_exp"]
     fecha_ven = datos["fecha_ven"]
@@ -400,12 +400,10 @@ def generar_pdfs_separados(datos: dict) -> tuple:
     _ = datetime.now(zona_mexico)
     
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    
-    pdf1_path = os.path.join(OUTPUT_DIR, f"{fol}_jalisco_completo.pdf")
-    pdf2_path = os.path.join(OUTPUT_DIR, f"{fol}_jalisco_simple.pdf")
+    out = os.path.join(OUTPUT_DIR, f"{fol}_completo.pdf")
     
     try:
-        # ===== PDF 1: PLANTILLA COMPLETA (jalisco1.pdf) =====
+        # ===== PROCESAR PRIMERA PÁGINA (jalisco1.pdf) =====
         doc1 = fitz.open(PLANTILLA_PDF)
         pg1 = doc1[0]
         
@@ -417,7 +415,8 @@ def generar_pdfs_separados(datos: dict) -> tuple:
         pg1.insert_text(coords_jalisco["fecha_ven"][:2], fecha_ven.strftime("%d/%m/%Y"),
                        fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
         
-        pg1.insert_text((930, 451), fol, fontsize=14, color=(0, 0, 0))
+        # FOLIO SIN ASTERISCOS: +10 derecha, -15 arriba (930 + 10 = 940, 451 - 15 = 436)
+        pg1.insert_text((940, 436), fol, fontsize=14, color=(0, 0, 0))
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
         pg1.insert_text((445, 880), fecha_actual_str, fontsize=33, color=(0, 0, 0))
@@ -438,7 +437,9 @@ SERIE:{datos.get('serie', '')}
 MOTOR:{datos.get('motor', '')}"""
         ine_img_path = os.path.join(OUTPUT_DIR, f"{fol}_inecode.png")
         generar_codigo_ine(contenido_ine, ine_img_path)
-        pg1.insert_image(fitz.Rect(937.65, 75, 1168.955, 132),
+        
+        # CÓDIGO PDF417: Bajado 20 puntos (75 + 20 = 95, 132 + 20 = 152)
+        pg1.insert_image(fitz.Rect(937.65, 95, 1168.955, 152),
                         filename=ine_img_path, keep_proportion=False, overlay=True)
         
         img_qr, url_qr = generar_qr_dinamico_jalisco(fol)
@@ -456,13 +457,9 @@ MOTOR:{datos.get('motor', '')}"""
                 pixmap=qr_pix,
                 overlay=True
             )
-            print(f"[QR JALISCO] Insertado en PDF completo")
+            print(f"[QR JALISCO] Insertado en página 1")
         
-        doc1.save(pdf1_path)
-        doc1.close()
-        print(f"[PDF 1] ✅ Generado: {pdf1_path}")
-        
-        # ===== PDF 2: PLANTILLA SIMPLE (jalisco.pdf) =====
+        # ===== PROCESAR SEGUNDA PÁGINA (jalisco.pdf) =====
         doc2 = fitz.open(PLANTILLA_BUENO)
         pg2 = doc2[0]
         
@@ -470,27 +467,28 @@ MOTOR:{datos.get('motor', '')}"""
         pg2.insert_text((380, 195), fecha_hora_str, fontsize=10, fontname="helv", color=(0, 0, 0))
         pg2.insert_text((380, 290), datos['serie'], fontsize=10, fontname="helv", color=(0, 0, 0))
         
-        doc2.save(pdf2_path)
-        doc2.close()
-        print(f"[PDF 2] ✅ Generado: {pdf2_path}")
+        # ===== UNIR AMBAS PÁGINAS EN UN SOLO PDF =====
+        doc_final = fitz.open()
+        doc_final.insert_pdf(doc1)
+        doc_final.insert_pdf(doc2)
         
-        return pdf1_path, pdf2_path
+        doc_final.save(out)
+        
+        doc_final.close()
+        doc1.close()
+        doc2.close()
+        
+        print(f"[PDF UNIFICADO] ✅ Generado exitosamente: {out} (2 páginas)")
         
     except Exception as e:
-        print(f"[ERROR] Generando PDFs separados: {e}")
-        doc_fallback1 = fitz.open()
-        page1 = doc_fallback1.new_page()
-        page1.insert_text((50, 50), f"ERROR - Folio: {fol} (Completo)", fontsize=12)
-        doc_fallback1.save(pdf1_path)
-        doc_fallback1.close()
-        
-        doc_fallback2 = fitz.open()
-        page2 = doc_fallback2.new_page()
-        page2.insert_text((50, 50), f"ERROR - Folio: {fol} (Simple)", fontsize=12)
-        doc_fallback2.save(pdf2_path)
-        doc_fallback2.close()
-        
-        return pdf1_path, pdf2_path
+        print(f"[ERROR] Generando PDF unificado: {e}")
+        doc_fallback = fitz.open()
+        page = doc_fallback.new_page()
+        page.insert_text((50, 50), f"ERROR - Folio: {fol}", fontsize=12)
+        doc_fallback.save(out)
+        doc_fallback.close()
+    
+    return out
 
 # ------------ HANDLERS PRINCIPALES ------------
 @dp.message(Command("start"))
@@ -613,19 +611,12 @@ async def get_nombre(message: types.Message, state: FSMContext):
             parse_mode="HTML"
         )
 
-        # Generar AMBOS PDFs por separado
-        pdf_completo, pdf_simple = generar_pdfs_separados(datos)
+        # Generar PDF UNIFICADO (2 páginas en 1 archivo)
+        pdf_unificado = generar_pdf_unificado(datos)
 
-        # Enviar PDF COMPLETO
         await message.answer_document(
-            FSInputFile(pdf_completo),
-            caption=f"📋 PERMISO COMPLETO - JALISCO\nFolio: {folio_final}\n✅ Documento principal con QR y código PDF417"
-        )
-
-        # Enviar PDF SIMPLE
-        await message.answer_document(
-            FSInputFile(pdf_simple),
-            caption=f"📄 PERMISO SIMPLE - JALISCO\nFolio: {folio_final}\n✅ Documento complementario (fecha y serie)"
+            FSInputFile(pdf_unificado),
+            caption=f"📋 PERMISO DE CIRCULACIÓN - JALISCO (COMPLETO)\nFolio: {folio_final}\nVigencia: 30 días\n\n✅ Documento con 2 páginas unificadas"
         )
 
         try:
@@ -904,7 +895,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="4.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="5.0")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -923,7 +914,7 @@ async def health():
         "ok": True,
         "bot": "Jalisco Permisos Sistema",
         "status": "running",
-        "version": "4.0 - PDFs Separados + Timer 36h + SERO + /chuleta",
+        "version": "5.0 - PDF Unificado + Coordenadas Ajustadas + Timer 36h",
         "entidad": "Jalisco",
         "vigencia": "30 días",
         "timer_eliminacion": "36 horas",
@@ -931,11 +922,15 @@ async def health():
         "prefijos_configurados": list(PREFIJOS_VALIDOS.keys()),
         "cursors_actuales": _folio_cursors,
         "comando_secreto": "/chuleta (invisible)",
+        "ajustes": [
+            "Código PDF417 bajado 20 puntos",
+            "Folio sin asteriscos: +10 derecha, -15 arriba"
+        ],
         "caracteristicas": [
-            "2 PDFs separados (completo + simple)",
+            "PDF unificado (2 páginas en 1 archivo)",
             "Folios por prefijo con continuidad desde Supabase",
             "Timer 36 horas con avisos 90/60/30/10",
-            "Reintentos automáticos ante duplicados (10000 intentos)",
+            "Reintentos automáticos ante duplicados",
             "Comando admin: SERO[folio]",
             "Timers independientes por folio"
         ]
@@ -944,7 +939,7 @@ async def health():
 @app.get("/status")
 async def status_detail():
     return {
-        "sistema": "Jalisco Digital v4.0 - PDFs Separados",
+        "sistema": "Jalisco Digital v5.0 - PDF Unificado + Coordenadas Ajustadas",
         "entidad": "Jalisco",
         "vigencia_dias": 30,
         "tiempo_eliminacion": "36 horas con avisos 90/60/30/10",
@@ -953,9 +948,13 @@ async def status_detail():
         "usuarios_con_folios": len(user_folios),
         "prefijos_disponibles": PREFIJOS_VALIDOS,
         "cursors_por_prefijo": _folio_cursors,
-        "pdf_output": "DOS archivos separados: completo + simple",
+        "pdf_output": "UN archivo con 2 páginas (jalisco1 + jalisco)",
         "continuidad": "Folios desde último en DB por prefijo; +1 con lock y reintentos",
         "comando_secreto": "/chuleta (invisible)",
+        "ajustes_coordenadas": {
+            "pdf417": "Bajado 20 puntos (y: 75→95)",
+            "folio_sin_asteriscos": "Derecha +10, Arriba -15 (x: 930→940, y: 451→436)"
+        },
         "timestamp": datetime.now().isoformat(),
         "status": "Operacional"
     }
@@ -965,10 +964,11 @@ if __name__ == '__main__':
         import uvicorn
         port = int(os.getenv("PORT", 8000))
         print(f"[ARRANQUE] Iniciando servidor en puerto {port}")
-        print(f"[SISTEMA] Jalisco v4.0 - PDFs Separados + Timer 36h + SERO")
+        print(f"[SISTEMA] Jalisco v5.0 - PDF Unificado + Coordenadas Ajustadas")
         print(f"[COMANDO SECRETO] /chuleta")
         print(f"[PREFIJOS] {PREFIJOS_VALIDOS}")
-        print(f"[PDF OUTPUT] 2 archivos separados por folio")
+        print(f"[PDF OUTPUT] 1 archivo unificado con 2 páginas")
+        print(f"[AJUSTES] PDF417: -20pts | Folio: +10 derecha, -15 arriba")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}")

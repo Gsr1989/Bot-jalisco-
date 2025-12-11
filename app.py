@@ -416,7 +416,7 @@ def generar_pdf_unificado(datos: dict) -> str:
                        fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
         
         # FOLIO SIN ASTERISCOS: +10 derecha, -15 arriba (930 + 10 = 940, 451 - 15 = 436)
-        pg1.insert_text((940, 436), fol, fontsize=14, color=(0, 0, 0))
+        pg1.insert_text((950, 430), fol, fontsize=14, color=(0, 0, 0))
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
         pg1.insert_text((445, 880), fecha_actual_str, fontsize=33, color=(0, 0, 0))
@@ -426,7 +426,7 @@ def generar_pdf_unificado(datos: dict) -> str:
         pg1.insert_text((605, 203), str(fol_rep), fontsize=55, color=(0, 0, 0))
         incrementar_folio_representativo(fol_rep)
         
-        pg1.insert_text((920, 700), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
+        pg1.insert_text((920, 695), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
         pg1.insert_text((950, 870), "VENTANILLA: DIGITAL", fontsize=14, color=(0, 0, 0))
         
         contenido_ine = f"""FOLIO:{fol}
@@ -438,9 +438,9 @@ MOTOR:{datos.get('motor', '')}"""
         ine_img_path = os.path.join(OUTPUT_DIR, f"{fol}_inecode.png")
         generar_codigo_ine(contenido_ine, ine_img_path)
         
-        # CÓDIGO PDF417: Bajado 20 puntos (75 + 20 = 95, 132 + 20 = 152)
-        pg1.insert_image(fitz.Rect(937.65, 95, 1168.955, 152),
-                        filename=ine_img_path, keep_proportion=False, overlay=True)
+        # CÓDIGO PDF417: Bajado 45 puntos total (75 + 20 + 25 = 120, 132 + 20 + 25 = 177)
+        pg1.insert_image(fitz.Rect(937.65, 120, 1168.955, 177),
+                filename=ine_img_path, keep_proportion=False, overlay=True)
         
         img_qr, url_qr = generar_qr_dinamico_jalisco(fol)
         if img_qr:

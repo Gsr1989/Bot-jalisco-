@@ -36,6 +36,7 @@ PLANTILLA_PDF = "jalisco1.pdf"
 PLANTILLA_BUENO = "jalisco.pdf"
 
 PRECIO_PERMISO = 250
+PRECIO_FIJO_PAGINA2 = 1080  # Precio fijo para página 2
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs("static/pdfs", exist_ok=True)
@@ -195,6 +196,100 @@ async def guardar_folio_con_reintento(datos, user_id, username, prefijo="1"):
     print(f"[ERROR FATAL] No se pudo guardar tras {max_intentos} intentos")
     return False
 
+# ============ SISTEMA DE FOLIOS PÁGINA 2 ============
+def _leer_folios_pagina2():
+    """Lee los contadores de la página 2"""
+    try:
+        with open("folios_pagina2.json") as f:
+            return json.load(f)
+    except Exception:
+        return {
+            "referencia_pago": 273312001734,
+            "num_autorizacion": 370803,
+            "folio_seguimiento": "GZUdr61oqv2",
+            "linea_captura": 41340816
+        }
+
+def _guardar_folios_pagina2(folios: dict):
+    """Guarda los contadores de la página 2"""
+    try:
+        with open("folios_pagina2.json", "w") as f:
+            json.dump(folios, f)
+    except Exception as e:
+        print(f"[WARN] No se pudo persistir folios página 2: {e}")
+
+def _incrementar_alfanumerico(codigo: str) -> str:
+    """Incrementa un código alfanumérico tipo GZUdr61oqv2 → GZUdr61oqw1"""
+    # Separar parte fija (letras) y parte variable (números+letra final)
+    # GZUdr61oqv2 -> "GZUdr" + "61oqv" + "2"
+    
+    # Buscar dónde empiezan los números
+    indice_numeros = 0
+    for i, char in enumerate(codigo):
+        if char.isdigit():
+            indice_numeros = i
+            break
+    
+    parte_fija = codigo[:indice_numeros]  # "GZUdr"
+    parte_variable = codigo[indice_numeros:]  # "61oqv2"
+    
+    # Extraer número y sufijo
+    # "61oqv2" -> "61" + "oqv" + "2"
+    match = re.match(r'(\d+)([a-z]+)(\d+)', parte_variable)
+    if match:
+        numero = int(match.group(1))
+        sufijo_letras = match.group(2)
+        digito_final = int(match.group(3))
+        
+        # Incrementar dígito final
+        digito_final += 1
+        
+        # Si pasa de 9, incrementar sufijo de letras
+        if digito_final > 9:
+            digito_final = 0
+            # Incrementar sufijo alfabético (oqv -> oqw)
+            sufijo_letras = _incrementar_sufijo_alfabetico(sufijo_letras)
+        
+        nuevo_codigo = f"{parte_fija}{numero}{sufijo_letras}{digito_final}"
+        return nuevo_codigo
+    
+    # Fallback: solo incrementar último dígito
+    return codigo[:-1] + str((int(codigo[-1]) + 1) % 10)
+
+def _incrementar_sufijo_alfabetico(sufijo: str) -> str:
+    """Incrementa un sufijo alfabético: oqv → oqw → oqx ... → oqz → ora"""
+    chars = list(sufijo)
+    
+    # Empezar desde el final
+    for i in range(len(chars) - 1, -1, -1):
+        if chars[i] == 'z':
+            chars[i] = 'a'
+            continue
+        else:
+            chars[i] = chr(ord(chars[i]) + 1)
+            break
+    
+    return ''.join(chars)
+
+def generar_folios_pagina2() -> dict:
+    """Genera nuevos folios para la página 2 e incrementa contadores"""
+    folios = _leer_folios_pagina2()
+    
+    # Incrementar todos los contadores
+    folios["referencia_pago"] += 1
+    folios["num_autorizacion"] += 1
+    folios["folio_seguimiento"] = _incrementar_alfanumerico(folios["folio_seguimiento"])
+    folios["linea_captura"] += 1
+    
+    # Guardar nuevos valores
+    _guardar_folios_pagina2(folios)
+    
+    print(f"[PÁGINA 2] Folios generados: Ref={folios['referencia_pago']}, "
+          f"Auth={folios['num_autorizacion']}, Seg={folios['folio_seguimiento']}, "
+          f"Linea={folios['linea_captura']}")
+    
+    return folios
+
 # ------------ TIMER MANAGEMENT - 36 HORAS ------------
 timers_activos = {}
 user_folios = {}
@@ -322,6 +417,15 @@ coords_jalisco = {
     "fecha_ven": (275, 645, 90, (0, 0, 0))
 }
 
+# Coordenadas para página 2 (basadas en la imagen del comprobante)
+coords_pagina2 = {
+    "referencia_pago": (600, 340, 12, (0, 0, 0)),      # 273312001734
+    "num_autorizacion": (600, 380, 12, (0, 0, 0)),     # 370803
+    "total_pagado": (600, 420, 12, (0, 0, 0)),         # $1080.00 MN
+    "folio_seguimiento": (600, 545, 12, (0, 0, 0)),    # GZUdr61oqv2
+    "linea_captura": (600, 585, 12, (0, 0, 0))         # 41340816
+}
+
 def generar_qr_dinamico_jalisco(folio):
     try:
         url_directa = f"{URL_CONSULTA_BASE}/consulta/{folio}"
@@ -415,8 +519,8 @@ def generar_pdf_unificado(datos: dict) -> str:
         pg1.insert_text(coords_jalisco["fecha_ven"][:2], fecha_ven.strftime("%d/%m/%Y"),
                        fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
         
-        # FOLIO SIN ASTERISCOS: +10 derecha, -15 arriba (930 + 10 = 940, 451 - 15 = 436)
-        pg1.insert_text((960, 425), fol, fontsize=14, color=(0, 0, 0))
+        # FOLIO SIN ASTERISCOS: Bajado 20 puntos (425 + 20 = 445)
+        pg1.insert_text((960, 445), fol, fontsize=14, color=(0, 0, 0))
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
         pg1.insert_text((445, 880), fecha_actual_str, fontsize=33, color=(0, 0, 0))
@@ -438,9 +542,9 @@ MOTOR:{datos.get('motor', '')}"""
         ine_img_path = os.path.join(OUTPUT_DIR, f"{fol}_inecode.png")
         generar_codigo_ine(contenido_ine, ine_img_path)
         
-        # CÓDIGO PDF417: Bajado 45 puntos total (75 + 20 + 25 = 120, 132 + 20 + 25 = 177)
+        # CÓDIGO PDF417: Bajado 75 puntos total (75 + 20 + 25 + 30 = 150, 132 + 75 = 207)
         pg1.insert_image(fitz.Rect(937.65, 150, 1168.955, 207),
-                filename=ine_img_path, keep_proportion=False, overlay=True)
+                        filename=ine_img_path, keep_proportion=False, overlay=True)
         
         img_qr, url_qr = generar_qr_dinamico_jalisco(fol)
         if img_qr:
@@ -459,13 +563,32 @@ MOTOR:{datos.get('motor', '')}"""
             )
             print(f"[QR JALISCO] Insertado en página 1")
         
-        # ===== PROCESAR SEGUNDA PÁGINA (jalisco.pdf) =====
+        # ===== PROCESAR SEGUNDA PÁGINA (jalisco.pdf) CON FOLIOS CONSECUTIVOS =====
         doc2 = fitz.open(PLANTILLA_BUENO)
         pg2 = doc2[0]
         
         fecha_hora_str = fecha_exp.strftime("%d/%m/%Y %H:%M")
         pg2.insert_text((380, 195), fecha_hora_str, fontsize=10, fontname="helv", color=(0, 0, 0))
         pg2.insert_text((380, 290), datos['serie'], fontsize=10, fontname="helv", color=(0, 0, 0))
+        
+        # GENERAR FOLIOS CONSECUTIVOS PARA PÁGINA 2
+        folios_pag2 = generar_folios_pagina2()
+        
+        # Insertar folios de página 2
+        pg2.insert_text(coords_pagina2["referencia_pago"][:2], str(folios_pag2["referencia_pago"]),
+                       fontsize=coords_pagina2["referencia_pago"][2], color=coords_pagina2["referencia_pago"][3])
+        
+        pg2.insert_text(coords_pagina2["num_autorizacion"][:2], str(folios_pag2["num_autorizacion"]),
+                       fontsize=coords_pagina2["num_autorizacion"][2], color=coords_pagina2["num_autorizacion"][3])
+        
+        pg2.insert_text(coords_pagina2["total_pagado"][:2], f"${PRECIO_FIJO_PAGINA2}.00 MN",
+                       fontsize=coords_pagina2["total_pagado"][2], color=coords_pagina2["total_pagado"][3])
+        
+        pg2.insert_text(coords_pagina2["folio_seguimiento"][:2], folios_pag2["folio_seguimiento"],
+                       fontsize=coords_pagina2["folio_seguimiento"][2], color=coords_pagina2["folio_seguimiento"][3])
+        
+        pg2.insert_text(coords_pagina2["linea_captura"][:2], str(folios_pag2["linea_captura"]),
+                       fontsize=coords_pagina2["linea_captura"][2], color=coords_pagina2["linea_captura"][3])
         
         # ===== UNIR AMBAS PÁGINAS EN UN SOLO PDF =====
         doc_final = fitz.open()
@@ -611,7 +734,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
             parse_mode="HTML"
         )
 
-        # Generar PDF UNIFICADO (2 páginas en 1 archivo)
+        # Generar PDF UNIFICADO (2 páginas en 1 archivo con folios consecutivos)
         pdf_unificado = generar_pdf_unificado(datos)
 
         await message.answer_document(
@@ -620,7 +743,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
         )
 
         try:
-            supabase.table("borradores_registros").insert({
+            supabase.table("borradores_registrados").insert({
                 "folio": folio_final,
                 "entidad": "Jalisco",
                 "numero_serie": datos["serie"],
@@ -895,7 +1018,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="5.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="6.0")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -914,7 +1037,7 @@ async def health():
         "ok": True,
         "bot": "Jalisco Permisos Sistema",
         "status": "running",
-        "version": "5.0 - PDF Unificado + Coordenadas Ajustadas + Timer 36h",
+        "version": "6.0 - PDF Unificado + Folios Consecutivos Página 2 + Timer 36h",
         "entidad": "Jalisco",
         "vigencia": "30 días",
         "timer_eliminacion": "36 horas",
@@ -922,13 +1045,11 @@ async def health():
         "prefijos_configurados": list(PREFIJOS_VALIDOS.keys()),
         "cursors_actuales": _folio_cursors,
         "comando_secreto": "/chuleta (invisible)",
-        "ajustes": [
-            "Código PDF417 bajado 20 puntos",
-            "Folio sin asteriscos: +10 derecha, -15 arriba"
-        ],
+        "folios_pagina2": _leer_folios_pagina2(),
         "caracteristicas": [
             "PDF unificado (2 páginas en 1 archivo)",
-            "Folios por prefijo con continuidad desde Supabase",
+            "Folios página 1: Consecutivos por prefijo desde DB",
+            "Folios página 2: Consecutivos alfanuméricos independientes",
             "Timer 36 horas con avisos 90/60/30/10",
             "Reintentos automáticos ante duplicados",
             "Comando admin: SERO[folio]",
@@ -939,7 +1060,7 @@ async def health():
 @app.get("/status")
 async def status_detail():
     return {
-        "sistema": "Jalisco Digital v5.0 - PDF Unificado + Coordenadas Ajustadas",
+        "sistema": "Jalisco Digital v6.0 - Folios Consecutivos Página 2",
         "entidad": "Jalisco",
         "vigencia_dias": 30,
         "tiempo_eliminacion": "36 horas con avisos 90/60/30/10",
@@ -948,13 +1069,10 @@ async def status_detail():
         "usuarios_con_folios": len(user_folios),
         "prefijos_disponibles": PREFIJOS_VALIDOS,
         "cursors_por_prefijo": _folio_cursors,
-        "pdf_output": "UN archivo con 2 páginas (jalisco1 + jalisco)",
+        "folios_pagina2_actuales": _leer_folios_pagina2(),
+        "pdf_output": "UN archivo con 2 páginas (jalisco1 + jalisco con folios)",
         "continuidad": "Folios desde último en DB por prefijo; +1 con lock y reintentos",
         "comando_secreto": "/chuleta (invisible)",
-        "ajustes_coordenadas": {
-            "pdf417": "Bajado 20 puntos (y: 75→95)",
-            "folio_sin_asteriscos": "Derecha +10, Arriba -15 (x: 930→940, y: 451→436)"
-        },
         "timestamp": datetime.now().isoformat(),
         "status": "Operacional"
     }
@@ -964,11 +1082,11 @@ if __name__ == '__main__':
         import uvicorn
         port = int(os.getenv("PORT", 8000))
         print(f"[ARRANQUE] Iniciando servidor en puerto {port}")
-        print(f"[SISTEMA] Jalisco v5.0 - PDF Unificado + Coordenadas Ajustadas")
+        print(f"[SISTEMA] Jalisco v6.0 - PDF Unificado + Folios Consecutivos Página 2")
         print(f"[COMANDO SECRETO] /chuleta")
         print(f"[PREFIJOS] {PREFIJOS_VALIDOS}")
-        print(f"[PDF OUTPUT] 1 archivo unificado con 2 páginas")
-        print(f"[AJUSTES] PDF417: -20pts | Folio: +10 derecha, -15 arriba")
+        print(f"[PDF OUTPUT] 1 archivo unificado con 2 páginas + folios consecutivos")
+        print(f"[FOLIOS PÁG 2] Ref/Auth/Seg/Linea consecutivos independientes")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}")

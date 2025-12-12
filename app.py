@@ -416,7 +416,7 @@ def generar_pdf_unificado(datos: dict) -> str:
                        fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
         
         # FOLIO SIN ASTERISCOS: +10 derecha, -15 arriba (930 + 10 = 940, 451 - 15 = 436)
-        pg1.insert_text((950, 430), fol, fontsize=14, color=(0, 0, 0))
+        pg1.insert_text((960, 425), fol, fontsize=14, color=(0, 0, 0))
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
         pg1.insert_text((445, 880), fecha_actual_str, fontsize=33, color=(0, 0, 0))
@@ -439,7 +439,7 @@ MOTOR:{datos.get('motor', '')}"""
         generar_codigo_ine(contenido_ine, ine_img_path)
         
         # CÓDIGO PDF417: Bajado 45 puntos total (75 + 20 + 25 = 120, 132 + 20 + 25 = 177)
-        pg1.insert_image(fitz.Rect(937.65, 120, 1168.955, 177),
+        pg1.insert_image(fitz.Rect(937.65, 150, 1168.955, 207),
                 filename=ine_img_path, keep_proportion=False, overlay=True)
         
         img_qr, url_qr = generar_qr_dinamico_jalisco(fol)

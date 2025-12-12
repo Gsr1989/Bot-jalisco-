@@ -419,11 +419,11 @@ coords_jalisco = {
 
 # Coordenadas para página 2 (basadas en la imagen del comprobante)
 coords_pagina2 = {
-    "referencia_pago": (380, 115, 10, (0, 0, 0)),      # 273312001734
-    "num_autorizacion": (380, 125, 10, (0, 0, 0)),     # 370803
+    "referencia_pago": (380, 123, 10, (0, 0, 0)),      # 273312001734
+    "num_autorizacion": (380, 140, 10, (0, 0, 0)),     # 370803
     "total_pagado": (380, 170, 10, (0, 0, 0)),         # $1080.00 MN
-    "folio_seguimiento": (380, 250, 10, (0, 0, 0)),    # GZUdr61oqv2
-    "linea_captura": (380, 260, 10, (0, 0, 0))         # 41340816
+    "folio_seguimiento": (380, 240, 10, (0, 0, 0)),    # GZUdr61oqv2
+    "linea_captura": (380, 270, 10, (0, 0, 0))         # 41340816
 }
 
 def generar_qr_dinamico_jalisco(folio):

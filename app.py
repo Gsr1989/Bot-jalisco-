@@ -520,7 +520,7 @@ def generar_pdf_unificado(datos: dict) -> str:
                        fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
         
         # FOLIO SIN ASTERISCOS: Bajado 20 puntos (425 + 20 = 445)
-        pg1.insert_text((960, 445), fol, fontsize=14, color=(0, 0, 0))
+        pg1.insert_text((960, 438), fol, fontsize=14, color=(0, 0, 0))
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
         pg1.insert_text((445, 880), fecha_actual_str, fontsize=33, color=(0, 0, 0))

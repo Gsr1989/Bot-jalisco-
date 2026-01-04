@@ -532,7 +532,7 @@ def generar_pdf_unificado(datos: dict) -> str:
         fecha_str = ahora_cdmx.strftime("%d/%m/%Y")
         hora_str = ahora_cdmx.strftime("%H:%M:%S")
         folio_chico = f"DVM-{fol_rep}   {fecha_str}  {hora_str}"
-        pg1.insert_text((915, 790), folio_chico, fontsize=14, color=(0, 0, 0))
+        pg1.insert_text((915, 775), folio_chico, fontsize=14, color=(0, 0, 0))
         
         incrementar_folio_representativo(fol_rep)
         
@@ -550,9 +550,9 @@ MOTOR:{datos.get('motor', '')}"""
         
         # PDF417: (x1, y1, x2, y2)
         x1_pdf = 937.65
-        y1_pdf = 550
+        y1_pdf = 850
         x2_pdf = 1168.955
-        y2_pdf = 607
+        y2_pdf = 907
         
         pg1.insert_image(fitz.Rect(x1_pdf, y1_pdf, x2_pdf, y2_pdf),
                         filename=ine_img_path, keep_proportion=False, overlay=True)

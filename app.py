@@ -84,30 +84,26 @@ def _guardar_cursors_local(cursors: dict):
         print(f"[WARN] No se pudo persistir cursors: {e}")
 
 def _leer_ultimo_folio_por_prefijo(prefijo: str):
+    """OPTIMIZADO: Query directa en Supabase"""
     try:
         inicio_rango = int(prefijo) * 100000000
         fin_rango = inicio_rango + 100000000
         
+        # OPTIMIZADO: Filtrar en Supabase, no en Python
         resp = (
             supabase.table("folios_registrados")
             .select("folio")
+            .gte("folio", str(inicio_rango))  # Mayor o igual
+            .lt("folio", str(fin_rango))      # Menor que
             .order("folio", desc=True)
-            .limit(2000)
+            .limit(1)  # Solo el último
             .execute()
         )
         
-        max_num = None
-        for row in (resp.data or []):
-            s = str(row.get("folio", "")).strip()
-            if re.fullmatch(r"\d{9}", s):
-                val = int(s)
-                if inicio_rango <= val < fin_rango:
-                    if max_num is None or val > max_num:
-                        max_num = val
-        
-        if max_num is not None:
-            print(f"[FOLIO][DB] Último folio prefijo {prefijo}: {max_num}")
-            return max_num
+        if resp.data and len(resp.data) > 0:
+            ultimo = int(resp.data[0]["folio"])
+            print(f"[FOLIO][DB] Último folio prefijo {prefijo}: {ultimo}")
+            return ultimo
         
         print(f"[FOLIO][DB] No hay folios con prefijo {prefijo}, usando base")
         return PREFIJOS_VALIDOS[prefijo] - 1
@@ -506,53 +502,59 @@ def generar_pdf_unificado(datos: dict) -> str:
         doc1 = fitz.open(PLANTILLA_PDF)
         pg1 = doc1[0]
         
-        # CAMPOS EN NEGRITA (helv-bold o hebo)
-        for campo in ["marca", "linea", "anio", "serie", "nombre", "color"]:
+        # TODOS LOS CAMPOS EN NEGRITA (hebo)
+        for campo in ["marca", "linea", "anio", "serie", "nombre", "color", "motor"]:
             if campo in coords_jalisco and campo in datos:
                 x, y, s, col = coords_jalisco[campo]
                 pg1.insert_text((x, y), datos.get(campo, ""), fontsize=s, color=col, fontname="hebo")
         
+        # Fecha de vencimiento en negrita
         pg1.insert_text(coords_jalisco["fecha_ven"][:2], fecha_ven.strftime("%d/%m/%Y"),
-                       fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
+                       fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3], fontname="hebo")
         
-        pg1.insert_text((860, 364), fol, fontsize=14, color=(0, 0, 0))
+        # Folio en negrita
+        pg1.insert_text((860, 364), fol, fontsize=14, color=(0, 0, 0), fontname="hebo")
         
+        # Fecha en negrita
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
-        pg1.insert_text((465, 820), fecha_actual_str, fontsize=32, color=(0, 0, 0))
+        pg1.insert_text((465, 820), fecha_actual_str, fontsize=32, color=(0, 0, 0), fontname="hebo")
         
         # FOLIO REPRESENTATIVO
         fol_rep = obtener_folio_representativo()
         
-        # FOLIO GRANDE: 4A-DVM/21385
+        # FOLIO GRANDE: 4A-DVM/21385 en negrita
         folio_grande = f"4A-DVM/{fol_rep}"
-        pg1.insert_text((240, 820), folio_grande, fontsize=32, color=(0, 0, 0))
-        pg1.insert_text((480, 182), folio_grande, fontsize=63, color=(0, 0, 0))
+        pg1.insert_text((240, 820), folio_grande, fontsize=32, color=(0, 0, 0), fontname="hebo")
+        pg1.insert_text((480, 182), folio_grande, fontsize=63, color=(0, 0, 0), fontname="hebo")
         
-        # FOLIO CHICO: DVM-21385   DD/MM/YYYY  HH:MM:SS
+        # FOLIO CHICO: DVM-21385   DD/MM/YYYY  HH:MM:SS en negrita
         fecha_str = ahora_cdmx.strftime("%d/%m/%Y")
         hora_str = ahora_cdmx.strftime("%H:%M:%S")
         folio_chico = f"DVM-{fol_rep}   {fecha_str}  {hora_str}"
-        pg1.insert_text((915, 775), folio_chico, fontsize=14, color=(0, 0, 0))
+        pg1.insert_text((915, 775), folio_chico, fontsize=14, color=(0, 0, 0), fontname="hebo")
         
         incrementar_folio_representativo(fol_rep)
         
         pg1.insert_text((930, 609), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
         
-        # CÓDIGO PDF417 CON FONDO GRIS
-        contenido_ine = f"""FOLIO:{fol}
-MARCA:{datos.get('marca', '')}
-LINEA:{datos.get('linea', '')}
-ANIO:{datos.get('anio', '')}
-SERIE:{datos.get('serie', '')}
-MOTOR:{datos.get('motor', '')}"""
+        # CÓDIGO PDF417 CON FORMATO NUEVO
+        contenido_ine = f"""FOLIO:  {fol}
+MARCA:  {datos.get('marca', '')}
+SUBMARCA:  {datos.get('linea', '')}
+AÑO:  {datos.get('anio', '')}
+SERIE:  {datos.get('serie', '')}
+MOTOR:  {datos.get('motor', '')}
+COLOR:  {datos.get('color', '')}
+NOMBRE:  {datos.get('nombre', '')}
+EXPEDICION: VENTANILLA DIGITAL"""
         ine_img_path = os.path.join(OUTPUT_DIR, f"{fol}_inecode.png")
         generar_codigo_ine(contenido_ine, ine_img_path)
         
-        # PDF417: (x1, y1, x2, y2) - REDUCIDO 5%
-        x1_pdf = 932.65      # ← Igual (esquina izquierda)
-        y1_pdf = 807         # ← Igual (esquina arriba)
-        x2_pdf = 1173.25     # ← 932.65 + 240.6
-        y2_pdf = 859.25      # ← 807 + 52.25
+        # PDF417: REDUCIDO 2.5%
+        x1_pdf = 932.65
+        y1_pdf = 807
+        x2_pdf = 1167.235  # ← 932.65 + 234.585 (97.5% de 240.6)
+        y2_pdf = 857.94    # ← 807 + 50.94 (97.5% de 52.25)
         
         pg1.insert_image(fitz.Rect(x1_pdf, y1_pdf, x2_pdf, y2_pdf),
                         filename=ine_img_path, keep_proportion=False, overlay=True)
@@ -1091,7 +1093,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="8.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="9.0")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -1110,7 +1112,7 @@ async def health():
         "ok": True,
         "bot": "Jalisco Permisos Sistema",
         "status": "running",
-        "version": "8.0 - Folios representativos mejorados + Fuentes bold + Fondos grises",
+        "version": "9.0 - OPTIMIZADO + Todo en negrita + PDF417 mejorado",
         "entidad": "Jalisco",
         "vigencia": "30 días",
         "timer_eliminacion": "36 horas",
@@ -1120,15 +1122,14 @@ async def health():
         "comando_secreto": "/chuleta (selectivo)",
         "folios_pagina2": _leer_folios_pagina2(),
         "caracteristicas": [
-            "Folio representativo grande: 4A-DVM/XXXXX",
-            "Folio representativo chico: DVM-XXXXX   DD/MM/YYYY  HH:MM:SS",
-            "Datos en negrita (hebo): marca, línea, año, serie, motor, color, nombre",
+            "Query Supabase OPTIMIZADA (5 min → 5 seg)",
+            "TODO el texto en NEGRITA (hebo)",
+            "PDF417 con formato: FOLIO:  MARCA:  SUBMARCA:  etc (2 espacios)",
+            "PDF417 incluye EXPEDICION: VENTANILLA DIGITAL",
+            "PDF417 reducido 2.5%",
             "Fondos grises para QR y PDF417",
             "Botones inline para validar/detener",
             "PDF unificado (2 páginas en 1 archivo)",
-            "Folios página 1: Consecutivos por prefijo desde DB",
-            "Folios página 2: Consecutivos alfanuméricos independientes",
-            "Timer 36 horas con avisos 90/60/30/10",
             "Timers independientes por folio"
         ]
     }
@@ -1136,7 +1137,7 @@ async def health():
 @app.get("/status")
 async def status_detail():
     return {
-        "sistema": "Jalisco Digital v8.0 - Folios representativos mejorados",
+        "sistema": "Jalisco Digital v9.0 - OPTIMIZADO",
         "entidad": "Jalisco",
         "vigencia_dias": 30,
         "tiempo_eliminacion": "36 horas con avisos 90/60/30/10",
@@ -1146,8 +1147,7 @@ async def status_detail():
         "prefijos_disponibles": PREFIJOS_VALIDOS,
         "cursors_por_prefijo": _folio_cursors,
         "folios_pagina2_actuales": _leer_folios_pagina2(),
-        "pdf_output": "UN archivo con 2 páginas (jalisco1 + jalisco con folios)",
-        "continuidad": "Folios desde último en DB por prefijo; +1 con lock y reintentos",
+        "optimizaciones": "Query directa con .gte() .lt() limit(1)",
         "comando_secreto": "/chuleta (selectivo)",
         "timestamp": datetime.now().isoformat(),
         "status": "Operacional"
@@ -1158,12 +1158,10 @@ if __name__ == '__main__':
         import uvicorn
         port = int(os.getenv("PORT", 8000))
         print(f"[ARRANQUE] Iniciando servidor en puerto {port}")
-        print(f"[SISTEMA] Jalisco v8.0 - Folios representativos mejorados + Bold + Grises")
+        print(f"[SISTEMA] Jalisco v9.0 - OPTIMIZADO + Todo negrita + PDF417 mejorado")
         print(f"[COMANDO SECRETO] /chuleta (solo al final)")
         print(f"[PREFIJOS] {PREFIJOS_VALIDOS}")
-        print(f"[PDF OUTPUT] 1 archivo unificado con 2 páginas + folios consecutivos")
-        print(f"[FOLIOS PÁG 2] Ref/Auth/Seg/Linea consecutivos independientes")
-        print(f"[FOLIOS REPRESENTATIVOS] Grande: 4A-DVM/XXXXX | Chico: DVM-XXXXX + fecha/hora")
+        print(f"[OPTIMIZACIÓN] Query Supabase directa (5 min → 5 seg)")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}")

@@ -277,6 +277,32 @@ def generar_folios_pagina2() -> dict:
     
     return folios
 
+# ============ FOLIO REPRESENTATIVO MEJORADO ============
+def obtener_folio_representativo():
+    try:
+        with open("folio_representativo.txt") as f:
+            return int(f.read().strip())
+    except FileNotFoundError:
+        folio_inicial = 21385
+        with open("folio_representativo.txt", "w") as f:
+            f.write(str(folio_inicial))
+        print(f"[REPRESENTATIVO] Archivo creado con valor inicial: {folio_inicial}")
+        return folio_inicial
+    except Exception as e:
+        print(f"[ERROR] Leyendo folio representativo: {e}")
+        return 21385
+
+def incrementar_folio_representativo(folio_actual):
+    try:
+        nuevo = folio_actual + 1
+        with open("folio_representativo.txt", "w") as f:
+            f.write(str(nuevo))
+        print(f"[REPRESENTATIVO] Incrementado de {folio_actual} a {nuevo}")
+        return nuevo
+    except Exception as e:
+        print(f"[ERROR] Incrementando folio representativo: {e}")
+        return folio_actual + 1
+
 # ------------ TIMER MANAGEMENT - 36 HORAS ------------
 timers_activos = {}
 user_folios = {}
@@ -434,40 +460,22 @@ def generar_qr_dinamico_jalisco(folio):
         print(f"[ERROR QR JALISCO] {e}")
         return None, None
 
-def obtener_folio_representativo():
-    try:
-        with open("folio_representativo.txt") as f:
-            return int(f.read().strip())
-    except FileNotFoundError:
-        folio_inicial = 501997
-        with open("folio_representativo.txt", "w") as f:
-            f.write(str(folio_inicial))
-        print(f"[REPRESENTATIVO] Archivo creado con valor inicial: {folio_inicial}")
-        return folio_inicial
-    except Exception as e:
-        print(f"[ERROR] Leyendo folio representativo: {e}")
-        return 501997
-
-def incrementar_folio_representativo(folio_actual):
-    try:
-        nuevo = folio_actual + 1
-        with open("folio_representativo.txt", "w") as f:
-            f.write(str(nuevo))
-        print(f"[REPRESENTATIVO] Incrementado de {folio_actual} a {nuevo}")
-        return nuevo
-    except Exception as e:
-        print(f"[ERROR] Incrementando folio representativo: {e}")
-        return folio_actual + 1
-
 def generar_codigo_ine(contenido, ruta_salida):
     try:
         codes = pdf417gen.encode(contenido, columns=6, security_level=5)
         image = pdf417gen.render_image(codes)
-        image.save(ruta_salida)
-        print(f"[PDF417] Código generado: {ruta_salida}")
+        
+        # Crear imagen con fondo gris
+        img_con_fondo = Image.new('RGB', image.size, color=(220, 220, 220))  # Gris claro
+        if image.mode == 'RGBA':
+            img_con_fondo.paste(image, (0, 0), image)
+        else:
+            img_con_fondo.paste(image, (0, 0))
+        img_con_fondo.save(ruta_salida)
+        print(f"[PDF417] Código generado con fondo gris: {ruta_salida}")
     except Exception as e:
         print(f"[ERROR] Generando PDF417: {e}")
-        img_fallback = Image.new('RGB', (200, 50), color='white')
+        img_fallback = Image.new('RGB', (200, 50), color=(220, 220, 220))
         img_fallback.save(ruta_salida)
 
 # ------------ FSM STATES ------------
@@ -488,7 +496,7 @@ def generar_pdf_unificado(datos: dict) -> str:
     fecha_ven = datos["fecha_ven"]
     
     zona_mexico = pytz.timezone("America/Mexico_City")
-    _ = datetime.now(zona_mexico)
+    ahora_cdmx = datetime.now(zona_mexico)
     
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     out = os.path.join(OUTPUT_DIR, f"{fol}_completo.pdf")
@@ -498,10 +506,11 @@ def generar_pdf_unificado(datos: dict) -> str:
         doc1 = fitz.open(PLANTILLA_PDF)
         pg1 = doc1[0]
         
+        # CAMPOS EN NEGRITA (helv-bold o hebo)
         for campo in ["marca", "linea", "anio", "serie", "nombre", "color"]:
             if campo in coords_jalisco and campo in datos:
                 x, y, s, col = coords_jalisco[campo]
-                pg1.insert_text((x, y), datos.get(campo, ""), fontsize=s, color=col)
+                pg1.insert_text((x, y), datos.get(campo, ""), fontsize=s, color=col, fontname="hebo")
         
         pg1.insert_text(coords_jalisco["fecha_ven"][:2], fecha_ven.strftime("%d/%m/%Y"),
                        fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
@@ -511,14 +520,25 @@ def generar_pdf_unificado(datos: dict) -> str:
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
         pg1.insert_text((445, 880), fecha_actual_str, fontsize=33, color=(0, 0, 0))
         
+        # FOLIO REPRESENTATIVO
         fol_rep = obtener_folio_representativo()
-        pg1.insert_text((305, 880), str(fol_rep), fontsize=32, color=(0, 0, 0))
-        pg1.insert_text((605, 203), str(fol_rep), fontsize=55, color=(0, 0, 0))
+        
+        # FOLIO GRANDE: 4A-DVM/21385
+        folio_grande = f"4A-DVM/{fol_rep}"
+        pg1.insert_text((305, 880), folio_grande, fontsize=32, color=(0, 0, 0))
+        pg1.insert_text((605, 203), folio_grande, fontsize=55, color=(0, 0, 0))
+        
+        # FOLIO CHICO: DVM-21385   DD/MM/YYYY  HH:MM:SS
+        fecha_str = ahora_cdmx.strftime("%d/%m/%Y")
+        hora_str = ahora_cdmx.strftime("%H:%M:%S")
+        folio_chico = f"DVM-{fol_rep}   {fecha_str}  {hora_str}"
+        pg1.insert_text((950, 880), folio_chico, fontsize=14, color=(0, 0, 0))
+        
         incrementar_folio_representativo(fol_rep)
         
         pg1.insert_text((920, 600), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
-        pg1.insert_text((950, 880), "Expedido: VENTANILLA DIGITAL", fontsize=14, color=(0, 0, 0))
         
+        # CÓDIGO PDF417 CON FONDO GRIS
         contenido_ine = f"""FOLIO:{fol}
 MARCA:{datos.get('marca', '')}
 LINEA:{datos.get('linea', '')}
@@ -531,10 +551,15 @@ MOTOR:{datos.get('motor', '')}"""
         pg1.insert_image(fitz.Rect(937.65, 150, 1168.955, 207),
                         filename=ine_img_path, keep_proportion=False, overlay=True)
         
+        # QR DINÁMICO CON FONDO GRIS
         img_qr, url_qr = generar_qr_dinamico_jalisco(fol)
         if img_qr:
+            # Crear fondo gris para QR
+            fondo_qr = Image.new('RGB', img_qr.size, color=(220, 220, 220))
+            fondo_qr.paste(img_qr, (0, 0))
+            
             buf = BytesIO()
-            img_qr.save(buf, format="PNG")
+            fondo_qr.save(buf, format="PNG")
             buf.seek(0)
             qr_pix = fitz.Pixmap(buf.read())
             x_qr = coords_qr_dinamico["x"]
@@ -546,7 +571,7 @@ MOTOR:{datos.get('motor', '')}"""
                 pixmap=qr_pix,
                 overlay=True
             )
-            print(f"[QR JALISCO] Insertado en página 1")
+            print(f"[QR JALISCO] Insertado con fondo gris en página 1")
         
         # ===== PROCESAR SEGUNDA PÁGINA (jalisco.pdf) CON FOLIOS CONSECUTIVOS =====
         doc2 = fitz.open(PLANTILLA_BUENO)
@@ -1060,7 +1085,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="7.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="8.0")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -1079,7 +1104,7 @@ async def health():
         "ok": True,
         "bot": "Jalisco Permisos Sistema",
         "status": "running",
-        "version": "7.0 - Botones Inline + /chuleta selectivo",
+        "version": "8.0 - Folios representativos mejorados + Fuentes bold + Fondos grises",
         "entidad": "Jalisco",
         "vigencia": "30 días",
         "timer_eliminacion": "36 horas",
@@ -1089,10 +1114,11 @@ async def health():
         "comando_secreto": "/chuleta (selectivo)",
         "folios_pagina2": _leer_folios_pagina2(),
         "caracteristicas": [
+            "Folio representativo grande: 4A-DVM/XXXXX",
+            "Folio representativo chico: DVM-XXXXX   DD/MM/YYYY  HH:MM:SS",
+            "Datos en negrita (hebo): marca, línea, año, serie, motor, color, nombre",
+            "Fondos grises para QR y PDF417",
             "Botones inline para validar/detener",
-            "Sin restricciones en campos (solo año 4 dígitos)",
-            "/chuleta SOLO al final y en respuestas específicas",
-            "Formulario limpio sin /chuleta",
             "PDF unificado (2 páginas en 1 archivo)",
             "Folios página 1: Consecutivos por prefijo desde DB",
             "Folios página 2: Consecutivos alfanuméricos independientes",
@@ -1104,7 +1130,7 @@ async def health():
 @app.get("/status")
 async def status_detail():
     return {
-        "sistema": "Jalisco Digital v7.0 - /chuleta selectivo",
+        "sistema": "Jalisco Digital v8.0 - Folios representativos mejorados",
         "entidad": "Jalisco",
         "vigencia_dias": 30,
         "tiempo_eliminacion": "36 horas con avisos 90/60/30/10",
@@ -1126,11 +1152,12 @@ if __name__ == '__main__':
         import uvicorn
         port = int(os.getenv("PORT", 8000))
         print(f"[ARRANQUE] Iniciando servidor en puerto {port}")
-        print(f"[SISTEMA] Jalisco v7.0 - Botones Inline + /chuleta selectivo")
+        print(f"[SISTEMA] Jalisco v8.0 - Folios representativos mejorados + Bold + Grises")
         print(f"[COMANDO SECRETO] /chuleta (solo al final)")
         print(f"[PREFIJOS] {PREFIJOS_VALIDOS}")
         print(f"[PDF OUTPUT] 1 archivo unificado con 2 páginas + folios consecutivos")
         print(f"[FOLIOS PÁG 2] Ref/Auth/Seg/Linea consecutivos independientes")
+        print(f"[FOLIOS REPRESENTATIVOS] Grande: 4A-DVM/XXXXX | Chico: DVM-XXXXX + fecha/hora")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}")

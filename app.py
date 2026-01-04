@@ -45,7 +45,7 @@ URL_CONSULTA_BASE = "https://serviciodigital-jaliscogobmx.onrender.com"
 
 coords_qr_dinamico = {
     "x": 966,
-    "y": 620,
+    "y": 610,
     "ancho": 140,
     "alto": 140
 }
@@ -521,11 +521,11 @@ def generar_pdf_unificado(datos: dict) -> str:
         fecha_str = ahora_cdmx.strftime("%d/%m/%Y")
         hora_str = ahora_cdmx.strftime("%H:%M:%S")
         folio_chico = f"DVM-{fol_rep}   {fecha_str}  {hora_str}"
-        pg1.insert_text((915, 775), folio_chico, fontsize=14, color=(0, 0, 0), fontname="hebo")
+        pg1.insert_text((915, 760), folio_chico, fontsize=14, color=(0, 0, 0), fontname="hebo")
         
         incrementar_folio_representativo(fol_rep)
         
-        pg1.insert_text((930, 609), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
+        pg1.insert_text((935, 597), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
         
         # PDF417 SIN EXPEDICION
         contenido_ine = f"""FOLIO:  {fol}
@@ -539,17 +539,17 @@ NOMBRE:  {datos.get('nombre', '')}"""
         ine_img_path = os.path.join(OUTPUT_DIR, f"{fol}_inecode.png")
         generar_codigo_ine(contenido_ine, ine_img_path)
         
-        # PDF417 REDUCIDO 1% MÁS (96.5% total)
+        # PDF417 REDUCIDO 7% MÁS (89.5% total)
         x1_pdf = 932.65
         y1_pdf = 807
-        x2_pdf = 1164.829  # 932.65 + 232.179
-        y2_pdf = 857.421   # 807 + 50.421
-        
+        x2_pdf = 1141.395  # 932.65 + 208.745 (89.5% de 232.179)
+        y2_pdf = 852.127   # 807 + 45.127 (89.5% de 50.421)
+
         pg1.insert_image(fitz.Rect(x1_pdf, y1_pdf, x2_pdf, y2_pdf),
-                        filename=ine_img_path, keep_proportion=False, overlay=True)
+                filename=ine_img_path, keep_proportion=False, overlay=True)
         
         # EXPEDICION: VENTANILLA DIGITAL como texto
-        pg1.insert_text((120, 450), "EXPEDICION: VENTANILLA DIGITAL", fontsize=12, color=(0, 0, 0), fontname="hebo")
+        pg1.insert_text((915, 775), "EXPEDICION: VENTANILLA DIGITAL", fontsize=12, color=(0, 0, 0), fontname="hebo")
         
         # QR DINÁMICO
         img_qr, url_qr = generar_qr_dinamico_jalisco(fol)

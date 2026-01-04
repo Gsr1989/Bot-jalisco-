@@ -84,9 +84,12 @@ def _guardar_cursors_local(cursors: dict):
         print(f"[WARN] No se pudo persistir cursors: {e}")
 
 def _leer_ultimo_folio_por_prefijo(prefijo: str):
+    """OPTIMIZADO: Query directa en Supabase"""
     try:
-        inicio_rango = int(prefijo) * 100000000
-        fin_rango = inicio_rango + 100000000
+        # AHORA SÍ USA LA BASE CORRECTA
+        base = PREFIJOS_VALIDOS[prefijo]
+        inicio_rango = base
+        fin_rango = base + 100000000
         
         resp = (
             supabase.table("folios_registrados")
@@ -104,13 +107,13 @@ def _leer_ultimo_folio_por_prefijo(prefijo: str):
             return ultimo
         
         print(f"[FOLIO][DB] No hay folios con prefijo {prefijo}, usando base")
-        return PREFIJOS_VALIDOS[prefijo] - 1
+        return base - 1  # ← CAMBIO: Devuelve 700000499
         
     except Exception as e:
         print(f"[ERROR] Consultando folios prefijo {prefijo}: {e}")
         return PREFIJOS_VALIDOS[prefijo] - 1
-
-async def inicializar_folio_cursors():
+        
+    async def inicializar_folio_cursors():
     global _folio_cursors
     
     cursors_local = _leer_cursors_local()

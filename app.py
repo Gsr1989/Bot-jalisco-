@@ -44,8 +44,8 @@ os.makedirs("static/pdfs", exist_ok=True)
 URL_CONSULTA_BASE = "https://serviciodigital-jaliscogobmx.onrender.com"
 
 coords_qr_dinamico = {
-    "x": 960,
-    "y": 650,
+    "x": 966,
+    "y": 620,
     "ancho": 140,
     "alto": 140
 }
@@ -428,7 +428,7 @@ coords_jalisco = {
     "nombre": (340, 304, 14, (0, 0, 0)),
     "fecha_exp": (120, 350, 14, (0, 0, 0)),
     "fecha_exp_completa": (120, 370, 14, (0, 0, 0)),
-    "fecha_ven": (275, 610, 90, (0, 0, 0))
+    "fecha_ven": (280, 580, 90, (0, 0, 0))
 }
 
 coords_pagina2 = {
@@ -507,7 +507,7 @@ def generar_pdf_unificado(datos: dict) -> str:
         pg1 = doc1[0]
         
         # CAMPOS EN NEGRITA (helv-bold o hebo)
-        for campo in ["marca", "linea", "anio", "serie", "nombre", "color", "folio"]:
+        for campo in ["marca", "linea", "anio", "serie", "nombre", "color"]:
             if campo in coords_jalisco and campo in datos:
                 x, y, s, col = coords_jalisco[campo]
                 pg1.insert_text((x, y), datos.get(campo, ""), fontsize=s, color=col, fontname="hebo")
@@ -550,9 +550,9 @@ MOTOR:{datos.get('motor', '')}"""
         
         # PDF417: (x1, y1, x2, y2)
         x1_pdf = 937.65
-        y1_pdf = 150
+        y1_pdf = 550
         x2_pdf = 1168.955
-        y2_pdf = 207
+        y2_pdf = 607
         
         pg1.insert_image(fitz.Rect(x1_pdf, y1_pdf, x2_pdf, y2_pdf),
                         filename=ine_img_path, keep_proportion=False, overlay=True)

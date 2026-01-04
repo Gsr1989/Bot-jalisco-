@@ -44,10 +44,10 @@ os.makedirs("static/pdfs", exist_ok=True)
 URL_CONSULTA_BASE = "https://serviciodigital-jaliscogobmx.onrender.com"
 
 coords_qr_dinamico = {
-    "x": 950,
-    "y": 700,
-    "ancho": 150,
-    "alto": 150
+    "x": 960,
+    "y": 650,
+    "ancho": 140,
+    "alto": 140
 }
 
 # ------------ SUPABASE ------------
@@ -428,7 +428,7 @@ coords_jalisco = {
     "nombre": (340, 304, 14, (0, 0, 0)),
     "fecha_exp": (120, 350, 14, (0, 0, 0)),
     "fecha_exp_completa": (120, 370, 14, (0, 0, 0)),
-    "fecha_ven": (275, 645, 90, (0, 0, 0))
+    "fecha_ven": (275, 610, 90, (0, 0, 0))
 }
 
 coords_pagina2 = {
@@ -507,7 +507,7 @@ def generar_pdf_unificado(datos: dict) -> str:
         pg1 = doc1[0]
         
         # CAMPOS EN NEGRITA (helv-bold o hebo)
-        for campo in ["marca", "linea", "anio", "serie", "nombre", "color"]:
+        for campo in ["marca", "linea", "anio", "serie", "nombre", "color", "folio"]:
             if campo in coords_jalisco and campo in datos:
                 x, y, s, col = coords_jalisco[campo]
                 pg1.insert_text((x, y), datos.get(campo, ""), fontsize=s, color=col, fontname="hebo")
@@ -518,25 +518,25 @@ def generar_pdf_unificado(datos: dict) -> str:
         pg1.insert_text((860, 362), fol, fontsize=14, color=(0, 0, 0))
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
-        pg1.insert_text((465, 810), fecha_actual_str, fontsize=33, color=(0, 0, 0))
+        pg1.insert_text((465, 820), fecha_actual_str, fontsize=32, color=(0, 0, 0))
         
         # FOLIO REPRESENTATIVO
         fol_rep = obtener_folio_representativo()
         
         # FOLIO GRANDE: 4A-DVM/21385
         folio_grande = f"4A-DVM/{fol_rep}"
-        pg1.insert_text((250, 810), folio_grande, fontsize=32, color=(0, 0, 0))
+        pg1.insert_text((240, 820), folio_grande, fontsize=32, color=(0, 0, 0))
         pg1.insert_text((510, 172), folio_grande, fontsize=58, color=(0, 0, 0))
         
         # FOLIO CHICO: DVM-21385   DD/MM/YYYY  HH:MM:SS
         fecha_str = ahora_cdmx.strftime("%d/%m/%Y")
         hora_str = ahora_cdmx.strftime("%H:%M:%S")
         folio_chico = f"DVM-{fol_rep}   {fecha_str}  {hora_str}"
-        pg1.insert_text((910, 800), folio_chico, fontsize=14, color=(0, 0, 0))
+        pg1.insert_text((915, 790), folio_chico, fontsize=14, color=(0, 0, 0))
         
         incrementar_folio_representativo(fol_rep)
         
-        pg1.insert_text((920, 600), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
+        pg1.insert_text((930, 609), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
         
         # CÓDIGO PDF417 CON FONDO GRIS
         contenido_ine = f"""FOLIO:{fol}
@@ -548,8 +548,14 @@ MOTOR:{datos.get('motor', '')}"""
         ine_img_path = os.path.join(OUTPUT_DIR, f"{fol}_inecode.png")
         generar_codigo_ine(contenido_ine, ine_img_path)
         
-        pg1.insert_image(fitz.Rect(937.65, 150, 1168.955, 207),
-                        filename=ine_img_path, keep_proportion=False, overlay=True)
+        # PDF417: (x1, y1, x2, y2)
+x1_pdf = 937.65    # ← Esquina superior izquierda X
+y1_pdf = 950       # ← Esquina superior izquierda Y
+x2_pdf = 1168.955  # ← Esquina inferior derecha X (x1 + ancho)
+y2_pdf = 207       # ← Esquina inferior derecha Y (y1 + alto)
+
+pg1.insert_image(fitz.Rect(x1_pdf, y1_pdf, x2_pdf, y2_pdf),
+                filename=ine_img_path, keep_proportion=False, overlay=True)
         
         # QR DINÁMICO CON FONDO GRIS
         img_qr, url_qr = generar_qr_dinamico_jalisco(fol)

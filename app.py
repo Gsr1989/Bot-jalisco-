@@ -525,8 +525,8 @@ def generar_pdf_unificado(datos: dict) -> str:
         
         # FOLIO GRANDE: 4A-DVM/21385
         folio_grande = f"4A-DVM/{fol_rep}"
-        pg1.insert_text((305, 880), folio_grande, fontsize=32, color=(0, 0, 0))
-        pg1.insert_text((605, 203), folio_grande, fontsize=55, color=(0, 0, 0))
+        pg1.insert_text((280, 780), folio_grande, fontsize=32, color=(0, 0, 0))
+        pg1.insert_text((550, 170), folio_grande, fontsize=55, color=(0, 0, 0))
         
         # FOLIO CHICO: DVM-21385   DD/MM/YYYY  HH:MM:SS
         fecha_str = ahora_cdmx.strftime("%d/%m/%Y")

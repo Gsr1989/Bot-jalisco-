@@ -526,7 +526,7 @@ def generar_pdf_unificado(datos: dict) -> str:
         # FOLIO GRANDE: 4A-DVM/21385
         folio_grande = f"4A-DVM/{fol_rep}"
         pg1.insert_text((240, 820), folio_grande, fontsize=32, color=(0, 0, 0))
-        pg1.insert_text((500, 168), folio_grande, fontsize=63, color=(0, 0, 0))
+        pg1.insert_text((480, 174), folio_grande, fontsize=63, color=(0, 0, 0))
         
         # FOLIO CHICO: DVM-21385   DD/MM/YYYY  HH:MM:SS
         fecha_str = ahora_cdmx.strftime("%d/%m/%Y")
@@ -548,11 +548,11 @@ MOTOR:{datos.get('motor', '')}"""
         ine_img_path = os.path.join(OUTPUT_DIR, f"{fol}_inecode.png")
         generar_codigo_ine(contenido_ine, ine_img_path)
         
-        # PDF417: (x1, y1, x2, y2) - REDUCIDO 20%
+        # PDF417: (x1, y1, x2, y2) - AUMENTADO 10%
         x1_pdf = 932.65      # ← Igual (esquina izquierda)
         y1_pdf = 807         # ← Igual (esquina arriba)
-        x2_pdf = 1116.85     # ← 932.65 + 184.2
-        y2_pdf = 847         # ← 807 + 40
+        x2_pdf = 1185.95     # ← 932.65 + 253.3
+        y2_pdf = 862         # ← 807 + 55
         
         pg1.insert_image(fitz.Rect(x1_pdf, y1_pdf, x2_pdf, y2_pdf),
                         filename=ine_img_path, keep_proportion=False, overlay=True)

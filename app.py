@@ -549,13 +549,13 @@ MOTOR:{datos.get('motor', '')}"""
         generar_codigo_ine(contenido_ine, ine_img_path)
         
         # PDF417: (x1, y1, x2, y2)
-x1_pdf = 937.65    # ← Esquina superior izquierda X
-y1_pdf = 950       # ← Esquina superior izquierda Y
-x2_pdf = 1168.955  # ← Esquina inferior derecha X (x1 + ancho)
-y2_pdf = 207       # ← Esquina inferior derecha Y (y1 + alto)
-
-pg1.insert_image(fitz.Rect(x1_pdf, y1_pdf, x2_pdf, y2_pdf),
-                filename=ine_img_path, keep_proportion=False, overlay=True)
+        x1_pdf = 937.65
+        y1_pdf = 150
+        x2_pdf = 1168.955
+        y2_pdf = 207
+        
+        pg1.insert_image(fitz.Rect(x1_pdf, y1_pdf, x2_pdf, y2_pdf),
+                        filename=ine_img_path, keep_proportion=False, overlay=True)
         
         # QR DINÁMICO CON FONDO GRIS
         img_qr, url_qr = generar_qr_dinamico_jalisco(fol)

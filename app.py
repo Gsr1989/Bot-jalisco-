@@ -60,7 +60,7 @@ dp = Dispatcher(storage=storage)
 
 # ============ FOLIOS CONSECUTIVOS CON PREFIJO ============
 PREFIJOS_VALIDOS = {
-    "1": 900000000,
+    "1": 700000500,
     "2": 800000000,
     "3": 700000000,
 }
@@ -84,7 +84,6 @@ def _guardar_cursors_local(cursors: dict):
         print(f"[WARN] No se pudo persistir cursors: {e}")
 
 def _leer_ultimo_folio_por_prefijo(prefijo: str):
-    """OPTIMIZADO: Query directa en Supabase"""
     try:
         inicio_rango = int(prefijo) * 100000000
         fin_rango = inicio_rango + 100000000
@@ -141,7 +140,6 @@ async def generar_folio_con_prefijo(prefijo: str) -> str:
         
         _folio_cursors[prefijo] += 1
         
-        # Asegurar que el folio NO empiece con 0
         while str(_folio_cursors[prefijo])[0] == '0':
             _folio_cursors[prefijo] += 1
         
@@ -445,7 +443,7 @@ def generar_qr_dinamico_jalisco(folio):
         qr.add_data(url_directa)
         qr.make(fit=True)
 
-        img_qr = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+        img_qr = qr.make_image(fill_color="black", back_color=(220, 220, 220)).convert("RGB")
         print(f"[QR JALISCO] Generado para folio {folio} -> {url_directa}")
         return img_qr, url_directa
         
@@ -496,13 +494,11 @@ def generar_pdf_unificado(datos: dict) -> str:
         doc1 = fitz.open(PLANTILLA_PDF)
         pg1 = doc1[0]
         
-        # CAMPOS EN NEGRITA (SIN MOTOR)
         for campo in ["marca", "linea", "anio", "serie", "nombre", "color"]:
             if campo in coords_jalisco and campo in datos:
                 x, y, s, col = coords_jalisco[campo]
                 pg1.insert_text((x, y), datos.get(campo, ""), fontsize=s, color=col, fontname="hebo")
         
-        # FECHA VENCIMIENTO SIN NEGRITA
         pg1.insert_text(coords_jalisco["fecha_ven"][:2], fecha_ven.strftime("%d/%m/%Y"),
                        fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
         
@@ -511,7 +507,6 @@ def generar_pdf_unificado(datos: dict) -> str:
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
         pg1.insert_text((475, 830), fecha_actual_str, fontsize=32, color=(0, 0, 0), fontname="hebo")
         
-        # FOLIO REPRESENTATIVO
         fol_rep = obtener_folio_representativo()
         
         folio_grande = f"4A-DVM/{fol_rep}"
@@ -527,7 +522,6 @@ def generar_pdf_unificado(datos: dict) -> str:
         
         pg1.insert_text((935, 600), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
         
-        # PDF417 SIN EXPEDICION
         contenido_ine = f"""FOLIO:  {fol}
 MARCA:  {datos.get('marca', '')}
 SUBMARCA:  {datos.get('linea', '')}
@@ -539,26 +533,20 @@ NOMBRE:  {datos.get('nombre', '')}"""
         ine_img_path = os.path.join(OUTPUT_DIR, f"{fol}_inecode.png")
         generar_codigo_ine(contenido_ine, ine_img_path)
         
-        # PDF417 REDUCIDO 7% MÁS (89.5% total)
         x1_pdf = 932.65
         y1_pdf = 807
-        x2_pdf = 1141.395  # 932.65 + 208.745 (89.5% de 232.179)
-        y2_pdf = 852.127   # 807 + 45.127 (89.5% de 50.421)
+        x2_pdf = 1141.395
+        y2_pdf = 852.127
 
         pg1.insert_image(fitz.Rect(x1_pdf, y1_pdf, x2_pdf, y2_pdf),
                 filename=ine_img_path, keep_proportion=False, overlay=True)
         
-        # EXPEDICION: VENTANILLA DIGITAL como texto
         pg1.insert_text((915, 775), "EXPEDICION: VENTANILLA DIGITAL", fontsize=12, color=(0, 0, 0), fontname="hebo")
         
-        # QR DINÁMICO
         img_qr, url_qr = generar_qr_dinamico_jalisco(fol)
         if img_qr:
-            fondo_qr = Image.new('RGB', img_qr.size, color=(220, 220, 220))
-            fondo_qr.paste(img_qr, (0, 0))
-            
             buf = BytesIO()
-            fondo_qr.save(buf, format="PNG")
+            img_qr.save(buf, format="PNG")
             buf.seek(0)
             qr_pix = fitz.Pixmap(buf.read())
             x_qr = coords_qr_dinamico["x"]
@@ -572,7 +560,6 @@ NOMBRE:  {datos.get('nombre', '')}"""
             )
             print(f"[QR JALISCO] Insertado con fondo gris en página 1")
         
-        # SEGUNDA PÁGINA
         doc2 = fitz.open(PLANTILLA_BUENO)
         pg2 = doc2[0]
         
@@ -597,7 +584,6 @@ NOMBRE:  {datos.get('nombre', '')}"""
         pg2.insert_text(coords_pagina2["linea_captura"][:2], str(folios_pag2["linea_captura"]),
                        fontsize=coords_pagina2["linea_captura"][2], color=coords_pagina2["linea_captura"][3])
         
-        # UNIR
         doc_final = fitz.open()
         doc_final.insert_pdf(doc1)
         doc_final.insert_pdf(doc2)
@@ -620,7 +606,6 @@ NOMBRE:  {datos.get('nombre', '')}"""
     
     return out
 
-# [El resto del código permanece igual desde aquí...]
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.clear()
@@ -892,7 +877,7 @@ async def codigo_admin(message: types.Message):
     else:
         await message.answer(
             "⚠️ Formato: SERO[número_de_folio]\n"
-            "Ejemplo: SERO900345876\n\n"
+            "Ejemplo: SERO700000501\n\n"
             f"📋 Para generar otro permiso use /chuleta"
         )
 
@@ -1081,7 +1066,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="10.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="11.0")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -1100,7 +1085,7 @@ async def health():
         "ok": True,
         "bot": "Jalisco Permisos Sistema",
         "status": "running",
-        "version": "10.0 - FINAL OPTIMIZADO",
+        "version": "11.0 - FINAL CON FONDOS GRISES",
         "entidad": "Jalisco",
         "vigencia": "30 días",
         "timer_eliminacion": "36 horas",
@@ -1110,11 +1095,12 @@ async def health():
         "comando_secreto": "/chuleta",
         "folios_pagina2": _leer_folios_pagina2(),
         "caracteristicas": [
-            "PDF417 reducido 1% adicional (96.5% total)",
+            "Folios desde 700000500 consecutivos",
+            "QR y PDF417 con fondo gris GARANTIZADO",
+            "PDF417 reducido 7%",
             "Fecha vencimiento SIN negrita",
-            "Motor eliminado del PDF (presente en PDF417)",
-            "EXPEDICION: VENTANILLA DIGITAL como texto",
-            "Folios SIN ceros al inicio",
+            "Motor NO visible (solo en PDF417)",
+            "EXPEDICION: VENTANILLA DIGITAL visible",
             "Query Supabase optimizada"
         ]
     }
@@ -1122,7 +1108,7 @@ async def health():
 @app.get("/status")
 async def status_detail():
     return {
-        "sistema": "Jalisco Digital v10.0",
+        "sistema": "Jalisco Digital v11.0",
         "entidad": "Jalisco",
         "vigencia_dias": 30,
         "tiempo_eliminacion": "36 horas",
@@ -1138,7 +1124,9 @@ if __name__ == '__main__':
         import uvicorn
         port = int(os.getenv("PORT", 8000))
         print(f"[ARRANQUE] Iniciando servidor en puerto {port}")
-        print(f"[SISTEMA] Jalisco v10.0 - FINAL")
+        print(f"[SISTEMA] Jalisco v11.0 - FINAL")
+        print(f"[FOLIOS] Empiezan en 700000500")
+        print(f"[FONDOS] QR y PDF417 con gris garantizado")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}")

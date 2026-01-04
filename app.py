@@ -84,9 +84,7 @@ def _guardar_cursors_local(cursors: dict):
         print(f"[WARN] No se pudo persistir cursors: {e}")
 
 def _leer_ultimo_folio_por_prefijo(prefijo: str):
-    """OPTIMIZADO: Query directa en Supabase"""
     try:
-        # AHORA SÍ USA LA BASE CORRECTA
         base = PREFIJOS_VALIDOS[prefijo]
         inicio_rango = base
         fin_rango = base + 100000000
@@ -112,8 +110,8 @@ def _leer_ultimo_folio_por_prefijo(prefijo: str):
     except Exception as e:
         print(f"[ERROR] Consultando folios prefijo {prefijo}: {e}")
         return PREFIJOS_VALIDOS[prefijo] - 1
-        
-    async def inicializar_folio_cursors():
+
+async def inicializar_folio_cursors():
     global _folio_cursors
     
     cursors_local = _leer_cursors_local()
@@ -457,14 +455,9 @@ def generar_qr_dinamico_jalisco(folio):
 def generar_codigo_ine(contenido, ruta_salida):
     try:
         codes = pdf417gen.encode(contenido, columns=6, security_level=5)
-        image = pdf417gen.render_image(codes)
+        image = pdf417gen.render_image(codes, scale=3, ratio=3, padding=7, fg_color=(0, 0, 0), bg_color=(220, 220, 220))
         
-        img_con_fondo = Image.new('RGB', image.size, color=(220, 220, 220))
-        if image.mode == 'RGBA':
-            img_con_fondo.paste(image, (0, 0), image)
-        else:
-            img_con_fondo.paste(image, (0, 0))
-        img_con_fondo.save(ruta_salida)
+        image.save(ruta_salida)
         print(f"[PDF417] Código generado con fondo gris: {ruta_salida}")
     except Exception as e:
         print(f"[ERROR] Generando PDF417: {e}")
@@ -880,7 +873,7 @@ async def codigo_admin(message: types.Message):
     else:
         await message.answer(
             "⚠️ Formato: SERO[número_de_folio]\n"
-            "Ejemplo: SERO700000501\n\n"
+            "Ejemplo: SERO900001501\n\n"
             f"📋 Para generar otro permiso use /chuleta"
         )
 
@@ -1069,7 +1062,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="11.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="12.0")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -1088,7 +1081,7 @@ async def health():
         "ok": True,
         "bot": "Jalisco Permisos Sistema",
         "status": "running",
-        "version": "11.0 - FINAL CON FONDOS GRISES",
+        "version": "12.0 - FINAL CORREGIDO",
         "entidad": "Jalisco",
         "vigencia": "30 días",
         "timer_eliminacion": "36 horas",
@@ -1098,20 +1091,18 @@ async def health():
         "comando_secreto": "/chuleta",
         "folios_pagina2": _leer_folios_pagina2(),
         "caracteristicas": [
-            "Folios desde 700000500 consecutivos",
-            "QR y PDF417 con fondo gris GARANTIZADO",
+            "Folios desde 900001500 consecutivos GARANTIZADO",
+            "QR y PDF417 con fondo gris RGB(220,220,220)",
             "PDF417 reducido 7%",
-            "Fecha vencimiento SIN negrita",
-            "Motor NO visible (solo en PDF417)",
-            "EXPEDICION: VENTANILLA DIGITAL visible",
-            "Query Supabase optimizada"
+            "Indentación corregida",
+            "Motor NO visible (solo en PDF417)"
         ]
     }
 
 @app.get("/status")
 async def status_detail():
     return {
-        "sistema": "Jalisco Digital v11.0",
+        "sistema": "Jalisco Digital v12.0",
         "entidad": "Jalisco",
         "vigencia_dias": 30,
         "tiempo_eliminacion": "36 horas",
@@ -1127,9 +1118,9 @@ if __name__ == '__main__':
         import uvicorn
         port = int(os.getenv("PORT", 8000))
         print(f"[ARRANQUE] Iniciando servidor en puerto {port}")
-        print(f"[SISTEMA] Jalisco v11.0 - FINAL")
-        print(f"[FOLIOS] Empiezan en 700000500")
-        print(f"[FONDOS] QR y PDF417 con gris garantizado")
+        print(f"[SISTEMA] Jalisco v12.0 - FINAL CORREGIDO")
+        print(f"[FOLIOS] Empiezan en 900001500")
+        print(f"[FONDOS] QR y PDF417 con gris RGB(220,220,220)")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}")

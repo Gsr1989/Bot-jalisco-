@@ -428,7 +428,7 @@ coords_jalisco = {
     "nombre": (340, 304, 14, (0, 0, 0)),
     "fecha_exp": (120, 350, 14, (0, 0, 0)),
     "fecha_exp_completa": (120, 370, 14, (0, 0, 0)),
-    "fecha_ven": (280, 580, 90, (0, 0, 0))
+    "fecha_ven": (285, 570, 90, (0, 0, 0))
 }
 
 coords_pagina2 = {
@@ -515,7 +515,7 @@ def generar_pdf_unificado(datos: dict) -> str:
         pg1.insert_text(coords_jalisco["fecha_ven"][:2], fecha_ven.strftime("%d/%m/%Y"),
                        fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
         
-        pg1.insert_text((860, 362), fol, fontsize=14, color=(0, 0, 0))
+        pg1.insert_text((860, 364), fol, fontsize=14, color=(0, 0, 0))
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
         pg1.insert_text((465, 820), fecha_actual_str, fontsize=32, color=(0, 0, 0))
@@ -526,7 +526,7 @@ def generar_pdf_unificado(datos: dict) -> str:
         # FOLIO GRANDE: 4A-DVM/21385
         folio_grande = f"4A-DVM/{fol_rep}"
         pg1.insert_text((240, 820), folio_grande, fontsize=32, color=(0, 0, 0))
-        pg1.insert_text((510, 172), folio_grande, fontsize=58, color=(0, 0, 0))
+        pg1.insert_text((510, 176), folio_grande, fontsize=60, color=(0, 0, 0))
         
         # FOLIO CHICO: DVM-21385   DD/MM/YYYY  HH:MM:SS
         fecha_str = ahora_cdmx.strftime("%d/%m/%Y")
@@ -550,9 +550,9 @@ MOTOR:{datos.get('motor', '')}"""
         
         # PDF417: (x1, y1, x2, y2)
         x1_pdf = 937.65
-        y1_pdf = 850
+        y1_pdf = 800
         x2_pdf = 1168.955
-        y2_pdf = 907
+        y2_pdf = 850
         
         pg1.insert_image(fitz.Rect(x1_pdf, y1_pdf, x2_pdf, y2_pdf),
                         filename=ine_img_path, keep_proportion=False, overlay=True)

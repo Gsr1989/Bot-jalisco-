@@ -60,7 +60,7 @@ dp = Dispatcher(storage=storage)
 
 # ============ FOLIOS CONSECUTIVOS CON PREFIJO ============
 PREFIJOS_VALIDOS = {
-    "1": 700000500,
+    "1": 900001500,
     "2": 800000000,
     "3": 700000000,
 }

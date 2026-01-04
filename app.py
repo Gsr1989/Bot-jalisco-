@@ -455,10 +455,29 @@ def generar_qr_dinamico_jalisco(folio):
 def generar_codigo_ine(contenido, ruta_salida):
     try:
         codes = pdf417gen.encode(contenido, columns=6, security_level=5)
-        image = pdf417gen.render_image(codes, scale=3, ratio=3, padding=7, fg_color=(0, 0, 0), bg_color=(220, 220, 220))
+        image = pdf417gen.render_image(codes)
         
-        image.save(ruta_salida)
-        print(f"[PDF417] Código generado con fondo gris: {ruta_salida}")
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        ancho, alto = image.size
+        img_gris = Image.new('RGB', (ancho, alto), color=(220, 220, 220))
+        
+        pixels = image.load()
+        pixels_gris = img_gris.load()
+        
+        for y in range(alto):
+            for x in range(ancho):
+                pixel = pixels[x, y]
+                if isinstance(pixel, tuple):
+                    if sum(pixel[:3]) < 384:
+                        pixels_gris[x, y] = (0, 0, 0)
+                else:
+                    if pixel < 128:
+                        pixels_gris[x, y] = (0, 0, 0)
+        
+        img_gris.save(ruta_salida)
+        print(f"[PDF417] Código NEGRO con fondo GRIS: {ruta_salida}")
     except Exception as e:
         print(f"[ERROR] Generando PDF417: {e}")
         img_fallback = Image.new('RGB', (200, 50), color=(220, 220, 220))
@@ -1062,7 +1081,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="12.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="13.0")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -1081,7 +1100,7 @@ async def health():
         "ok": True,
         "bot": "Jalisco Permisos Sistema",
         "status": "running",
-        "version": "12.0 - FINAL CORREGIDO",
+        "version": "13.0 - PDF417 NEGRO CON FONDO GRIS",
         "entidad": "Jalisco",
         "vigencia": "30 días",
         "timer_eliminacion": "36 horas",
@@ -1091,10 +1110,10 @@ async def health():
         "comando_secreto": "/chuleta",
         "folios_pagina2": _leer_folios_pagina2(),
         "caracteristicas": [
-            "Folios desde 900001500 consecutivos GARANTIZADO",
-            "QR y PDF417 con fondo gris RGB(220,220,220)",
-            "PDF417 reducido 7%",
-            "Indentación corregida",
+            "Folios desde 900001500 consecutivos",
+            "QR con fondo gris RGB(220,220,220)",
+            "PDF417 NEGRO con fondo GRIS RGB(220,220,220)",
+            "Fecha vencimiento SIN negrita",
             "Motor NO visible (solo en PDF417)"
         ]
     }
@@ -1102,7 +1121,7 @@ async def health():
 @app.get("/status")
 async def status_detail():
     return {
-        "sistema": "Jalisco Digital v12.0",
+        "sistema": "Jalisco Digital v13.0",
         "entidad": "Jalisco",
         "vigencia_dias": 30,
         "tiempo_eliminacion": "36 horas",
@@ -1118,9 +1137,9 @@ if __name__ == '__main__':
         import uvicorn
         port = int(os.getenv("PORT", 8000))
         print(f"[ARRANQUE] Iniciando servidor en puerto {port}")
-        print(f"[SISTEMA] Jalisco v12.0 - FINAL CORREGIDO")
+        print(f"[SISTEMA] Jalisco v13.0 - PDF417 NEGRO CON FONDO GRIS")
         print(f"[FOLIOS] Empiezan en 900001500")
-        print(f"[FONDOS] QR y PDF417 con gris RGB(220,220,220)")
+        print(f"[PDF417] Código NEGRO sobre fondo GRIS")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}")

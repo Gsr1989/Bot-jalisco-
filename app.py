@@ -107,7 +107,7 @@ def _leer_ultimo_folio_por_prefijo(prefijo: str):
             return ultimo
         
         print(f"[FOLIO][DB] No hay folios con prefijo {prefijo}, usando base")
-        return base - 1  # ← CAMBIO: Devuelve 700000499
+        return base - 1
         
     except Exception as e:
         print(f"[ERROR] Consultando folios prefijo {prefijo}: {e}")

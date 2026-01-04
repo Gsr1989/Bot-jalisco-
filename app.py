@@ -518,21 +518,21 @@ def generar_pdf_unificado(datos: dict) -> str:
         pg1.insert_text((860, 362), fol, fontsize=14, color=(0, 0, 0))
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
-        pg1.insert_text((445, 880), fecha_actual_str, fontsize=33, color=(0, 0, 0))
+        pg1.insert_text((465, 810), fecha_actual_str, fontsize=33, color=(0, 0, 0))
         
         # FOLIO REPRESENTATIVO
         fol_rep = obtener_folio_representativo()
         
         # FOLIO GRANDE: 4A-DVM/21385
         folio_grande = f"4A-DVM/{fol_rep}"
-        pg1.insert_text((280, 780), folio_grande, fontsize=32, color=(0, 0, 0))
-        pg1.insert_text((550, 170), folio_grande, fontsize=55, color=(0, 0, 0))
+        pg1.insert_text((250, 810), folio_grande, fontsize=32, color=(0, 0, 0))
+        pg1.insert_text((510, 172), folio_grande, fontsize=58, color=(0, 0, 0))
         
         # FOLIO CHICO: DVM-21385   DD/MM/YYYY  HH:MM:SS
         fecha_str = ahora_cdmx.strftime("%d/%m/%Y")
         hora_str = ahora_cdmx.strftime("%H:%M:%S")
         folio_chico = f"DVM-{fol_rep}   {fecha_str}  {hora_str}"
-        pg1.insert_text((950, 880), folio_chico, fontsize=14, color=(0, 0, 0))
+        pg1.insert_text((910, 800), folio_chico, fontsize=14, color=(0, 0, 0))
         
         incrementar_folio_representativo(fol_rep)
         

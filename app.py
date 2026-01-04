@@ -45,7 +45,7 @@ URL_CONSULTA_BASE = "https://serviciodigital-jaliscogobmx.onrender.com"
 
 coords_qr_dinamico = {
     "x": 966,
-    "y": 610,
+    "y": 603,
     "ancho": 140,
     "alto": 140
 }
@@ -509,13 +509,13 @@ def generar_pdf_unificado(datos: dict) -> str:
         pg1.insert_text((860, 364), fol, fontsize=14, color=(0, 0, 0), fontname="hebo")
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
-        pg1.insert_text((465, 820), fecha_actual_str, fontsize=32, color=(0, 0, 0), fontname="hebo")
+        pg1.insert_text((475, 830), fecha_actual_str, fontsize=32, color=(0, 0, 0), fontname="hebo")
         
         # FOLIO REPRESENTATIVO
         fol_rep = obtener_folio_representativo()
         
         folio_grande = f"4A-DVM/{fol_rep}"
-        pg1.insert_text((240, 820), folio_grande, fontsize=32, color=(0, 0, 0), fontname="hebo")
+        pg1.insert_text((240, 830), folio_grande, fontsize=32, color=(0, 0, 0), fontname="hebo")
         pg1.insert_text((480, 182), folio_grande, fontsize=63, color=(0, 0, 0), fontname="hebo")
         
         fecha_str = ahora_cdmx.strftime("%d/%m/%Y")
@@ -525,7 +525,7 @@ def generar_pdf_unificado(datos: dict) -> str:
         
         incrementar_folio_representativo(fol_rep)
         
-        pg1.insert_text((935, 597), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
+        pg1.insert_text((935, 600), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
         
         # PDF417 SIN EXPEDICION
         contenido_ine = f"""FOLIO:  {fol}

@@ -394,10 +394,10 @@ def obtener_folios_usuario(user_id: int) -> list:
 coords_jalisco = {
     "folio": (800, 360, 14, (0, 0, 0)),
     "marca": (340, 332, 14, (0, 0, 0)),
-    "serie": (910, 332, 14, (0, 0, 0)),
+    "serie": (920, 336, 14, (0, 0, 0)),
     "linea": (340, 360, 14, (0, 0, 0)),
     "motor": (300, 260, 14, (0, 0, 0)),
-    "anio": (340, 389, 14, (0, 0, 0)),
+    "anio": (340, 392, 14, (0, 0, 0)),
     "color": (340, 415, 14, (0, 0, 0)),
     "nombre": (340, 304, 14, (0, 0, 0)),
     "fecha_exp": (120, 350, 14, (0, 0, 0)),
@@ -506,7 +506,7 @@ def generar_pdf_unificado(datos: dict) -> str:
         pg1.insert_text(coords_jalisco["fecha_ven"][:2], fecha_ven.strftime("%d/%m/%Y"),
                        fontsize=coords_jalisco["fecha_ven"][2], color=coords_jalisco["fecha_ven"][3])
         
-        pg1.insert_text((780, 360), fol, fontsize=14, color=(0, 0, 0))
+        pg1.insert_text((860, 366), fol, fontsize=14, color=(0, 0, 0))
         
         fecha_actual_str = fecha_exp.strftime("%d/%m/%Y")
         pg1.insert_text((445, 880), fecha_actual_str, fontsize=33, color=(0, 0, 0))

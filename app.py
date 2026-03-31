@@ -505,7 +505,7 @@ def generar_pdf_unificado(datos: dict) -> str:
 
         incrementar_folio_representativo(fol_rep)
 
-        pg1.insert_text((935, 600), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
+        pg1.insert_text((935, 700), f"*{fol}*", fontsize=30, color=(0, 0, 0), fontname="Courier")
 
         pg1.insert_text((915, 775), "EXPEDICION: VENTANILLA DIGITAL", fontsize=12, color=(0, 0, 0), fontname="hebo")
 

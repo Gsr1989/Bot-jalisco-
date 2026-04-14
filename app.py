@@ -17,7 +17,7 @@ from PIL import Image
 from io import BytesIO
 import json
 import re
-import segno
+import qrcode
 
 # PDF417
 try:
@@ -168,7 +168,7 @@ def _sb_insertar_folio(datos: dict, user_id: int, username: str):
 
 def _sb_insertar_borrador(datos: dict, user_id: int):
     """Síncrono — usar con asyncio.to_thread."""
-    hoy      = datos["fecha_exp"]
+    hoy       = datos["fecha_exp"]
     fecha_ven = datos["fecha_ven"]
     supabase.table("borradores_registros").insert({
         "folio":             datos["folio"],
@@ -373,12 +373,12 @@ def obtener_folios_usuario(user_id: int) -> list:
 
 # ============ COORDENADAS PDF ============
 coords_jalisco = {
-    "marca":   (340, 332, 14, (0,0,0)),
-    "serie":   (920, 332, 14, (0,0,0)),
-    "linea":   (340, 360, 14, (0,0,0)),
-    "anio":    (340, 389, 14, (0,0,0)),
-    "color":   (340, 418, 14, (0,0,0)),
-    "nombre":  (340, 304, 14, (0,0,0)),
+    "marca":     (340, 332, 14, (0,0,0)),
+    "serie":     (920, 332, 14, (0,0,0)),
+    "linea":     (340, 360, 14, (0,0,0)),
+    "anio":      (340, 389, 14, (0,0,0)),
+    "color":     (340, 418, 14, (0,0,0)),
+    "nombre":    (340, 304, 14, (0,0,0)),
     "fecha_ven": (285, 570, 90, (0,0,0)),
 }
 
@@ -390,27 +390,25 @@ coords_pagina2 = {
     "linea_captura":     (380, 265, 10, (0,0,0)),
 }
 
-# ============ QR PRINCIPAL con segno (rápido) ============
+# ============ QR PRINCIPAL (original con qrcode) ============
 def _generar_qr_jalisco(folio: str):
     """Síncrono — usar con asyncio.to_thread."""
     try:
         url = f"{URL_CONSULTA_BASE}/consulta/{folio}"
-        qr  = segno.make(url, error='m', version=2)
-        buf = BytesIO()
-        qr.save(buf, kind='png', scale=4, border=1,
-                dark='black', light=(220, 220, 220))
-        buf.seek(0)
-        img = Image.open(buf).convert("RGB")
+        qr  = qrcode.QRCode(version=2, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=4, border=1)
+        qr.add_data(url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color=(220,220,220)).convert("RGB")
         print(f"[QR] Generado para folio {folio}")
         return img
     except Exception as e:
         print(f"[ERROR QR] {e}")
         return None
 
-# ============ PDF417 RECTANGULAR ============
+# ============ PDF417 RECTANGULAR (original con qrcode fallback) ============
 def _generar_pdf417(datos: dict) -> Image.Image | None:
     """
-    Genera un PDF417 con todos los datos del vehículo.
+    Genera un PDF417 con todos los datos del vehículo separados por espacio.
     Síncrono — usar con asyncio.to_thread.
     """
     texto = (
@@ -438,13 +436,12 @@ def _generar_pdf417(datos: dict) -> Image.Image | None:
         except Exception as e:
             print(f"[ERROR PDF417] {e} — usando QR fallback")
 
-    # Fallback: QR estirado con segno
+    # Fallback: QR estirado con qrcode
     try:
-        qr  = segno.make(texto, error='l', version=4)
-        buf = BytesIO()
-        qr.save(buf, kind='png', scale=2, border=1, dark='black', light='white')
-        buf.seek(0)
-        img = Image.open(buf).convert("RGB")
+        qr = qrcode.QRCode(version=4, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=2, border=1)
+        qr.add_data(texto)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
         img = img.resize((ancho_pts * 4, alto_pts * 4), Image.NEAREST)
         print(f"[QR FALLBACK PDF417] Generado para folio {datos['folio']}")
         return img
@@ -508,7 +505,7 @@ def _generar_pdf_unificado(datos: dict) -> str:
         pg1.insert_text((935, 600), f"*{fol}*", fontsize=30, color=(0,0,0), fontname="Courier")
         pg1.insert_text((915, 775), "EXPEDICION: VENTANILLA 32", fontsize=12, color=(0,0,0), fontname="hebo")
 
-        # ── QR cuadrado ──
+        # ── QR cuadrado (posición original) ──
         img_qr = _generar_qr_jalisco(fol)
         if img_qr:
             buf = BytesIO()
@@ -997,7 +994,7 @@ async def lifespan(app: FastAPI):
             _keep_task = asyncio.create_task(keep_alive())
         else:
             print("[POLLING] Sin webhook")
-        print(f"[SISTEMA] Jalisco v17.0 iniciado — "
+        print(f"[SISTEMA] Jalisco v17.1 iniciado — "
               f"PDF417 {'✅' if PDF417_DISPONIBLE else '⚠️ (fallback QR)'}")
         yield
     except Exception as e:
@@ -1010,7 +1007,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="17.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="17.1")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -1026,34 +1023,35 @@ async def telegram_webhook(request: Request):
 @app.get("/")
 async def health():
     return {
-        "ok":               True,
-        "version":          "17.0 - timeout fix + segno + cache",
-        "entidad":          "Jalisco",
+        "ok":                True,
+        "version":           "17.1 - timeout fix + cache plantillas + QR/PDF417 originales",
+        "entidad":           "Jalisco",
         "pdf417_disponible": PDF417_DISPONIBLE,
-        "active_timers":    len(timers_activos),
-        "cursors_actuales": _folio_cursors,
-        "fixes_v17": [
+        "active_timers":     len(timers_activos),
+        "cursors_actuales":  _folio_cursors,
+        "fixes_v17.1": [
             "AiohttpSession timeout=300s — elimina el HTTP timeout error",
-            "segno en lugar de qrcode — generación QR 10x más rápida",
             "Plantillas PDF cargadas en RAM al inicio — sin I/O de disco por permiso",
             "fitz.open(stream=bytes) — sin abrir archivos en cada PDF",
+            "QR y PDF417 con qrcode original — sin cambios de librería",
+            "guardar_folio_con_reintento — busca siguiente folio disponible automáticamente",
         ]
     }
 
 @app.get("/status")
 async def status_detail():
     return {
-        "sistema":            "Jalisco Digital v17.0",
-        "pdf417_disponible":  PDF417_DISPONIBLE,
-        "total_timers":       len(timers_activos),
-        "folios_activos":     list(timers_activos.keys()),
+        "sistema":             "Jalisco Digital v17.1",
+        "pdf417_disponible":   PDF417_DISPONIBLE,
+        "total_timers":        len(timers_activos),
+        "folios_activos":      list(timers_activos.keys()),
         "cursors_por_prefijo": _folio_cursors,
-        "timestamp":          datetime.now().isoformat(),
+        "timestamp":           datetime.now().isoformat(),
     }
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    print(f"[ARRANQUE] Jalisco v17.0 — puerto {port}")
+    print(f"[ARRANQUE] Jalisco v17.1 — puerto {port}")
     print(f"[PDF417] {'Disponible ✅' if PDF417_DISPONIBLE else 'No disponible, usando QR fallback'}")
     uvicorn.run(app, host="0.0.0.0", port=port)

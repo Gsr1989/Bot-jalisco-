@@ -1,4 +1,3 @@
-segno
 fastapi
 aiogram
 supabase

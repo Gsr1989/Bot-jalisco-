@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher, types
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -16,7 +17,7 @@ from PIL import Image
 from io import BytesIO
 import json
 import re
-import qrcode
+import segno
 
 # PDF417
 try:
@@ -47,16 +48,29 @@ URL_CONSULTA_BASE = "https://serviciodigital-jaliscogobmx.onrender.com"
 # QR principal (cuadrado, sin cambios)
 coords_qr_dinamico = {"x": 966, "y": 603, "ancho": 140, "alto": 140}
 
-# Rectángulo donde va el PDF417 (donde estaba el PDF417 original)
+# Rectángulo donde va el PDF417
 RECT_PDF417 = fitz.Rect(932.65, 807, 1141.395, 852.127)
+
+# ------------ PLANTILLAS EN MEMORIA ------------
+_plantilla1_bytes: bytes | None = None
+_plantilla2_bytes: bytes | None = None
+
+def _cargar_plantillas():
+    global _plantilla1_bytes, _plantilla2_bytes
+    with open(PLANTILLA_PDF, "rb") as f:
+        _plantilla1_bytes = f.read()
+    with open(PLANTILLA_BUENO, "rb") as f:
+        _plantilla2_bytes = f.read()
+    print("[PLANTILLAS] Cargadas en memoria ✅")
 
 # ------------ SUPABASE ------------
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ------------ BOT ------------
-bot     = Bot(token=BOT_TOKEN)
-storage = MemoryStorage()
-dp      = Dispatcher(storage=storage)
+# ------------ BOT con timeout 300s ------------
+session_bot = AiohttpSession(timeout=300)
+bot         = Bot(token=BOT_TOKEN, session=session_bot)
+storage     = MemoryStorage()
+dp          = Dispatcher(storage=storage)
 
 # ============ FOLIOS CONSECUTIVOS ============
 PREFIJOS_VALIDOS = {
@@ -376,28 +390,29 @@ coords_pagina2 = {
     "linea_captura":     (380, 265, 10, (0,0,0)),
 }
 
-# ============ QR PRINCIPAL (sin cambios) ============
+# ============ QR PRINCIPAL con segno (rápido) ============
 def _generar_qr_jalisco(folio: str):
     """Síncrono — usar con asyncio.to_thread."""
     try:
         url = f"{URL_CONSULTA_BASE}/consulta/{folio}"
-        qr  = qrcode.QRCode(version=2, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=4, border=1)
-        qr.add_data(url)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color=(220,220,220)).convert("RGB")
+        qr  = segno.make(url, error='m', version=2)
+        buf = BytesIO()
+        qr.save(buf, kind='png', scale=4, border=1,
+                dark='black', light=(220, 220, 220))
+        buf.seek(0)
+        img = Image.open(buf).convert("RGB")
         print(f"[QR] Generado para folio {folio}")
         return img
     except Exception as e:
         print(f"[ERROR QR] {e}")
         return None
 
-# ============ PDF417 RECTANGULAR (reemplaza Aztec/PDF417 anterior) ============
+# ============ PDF417 RECTANGULAR ============
 def _generar_pdf417(datos: dict) -> Image.Image | None:
     """
-    Genera un PDF417 con todos los datos del vehículo separados por espacio.
+    Genera un PDF417 con todos los datos del vehículo.
     Síncrono — usar con asyncio.to_thread.
     """
-    # Texto que se leerá al escanear
     texto = (
         f"FOLIO {datos['folio']} "
         f"MARCA {datos['marca']} "
@@ -409,13 +424,11 @@ def _generar_pdf417(datos: dict) -> Image.Image | None:
         f"TITULAR {datos['nombre']}"
     )
 
-    # Dimensiones del rectángulo destino en puntos PDF
-    ancho_pts = int(RECT_PDF417.x1 - RECT_PDF417.x0)  # ≈ 209
-    alto_pts  = int(RECT_PDF417.y1 - RECT_PDF417.y0)   # ≈ 45
+    ancho_pts = int(RECT_PDF417.x1 - RECT_PDF417.x0)
+    alto_pts  = int(RECT_PDF417.y1 - RECT_PDF417.y0)
 
     if PDF417_DISPONIBLE:
         try:
-            # columns=8 genera un código horizontal/ancho
             codes = pdf417_encode(texto, columns=8, security_level=2)
             img   = pdf417_render(codes, scale=2, ratio=2)
             img   = img.convert("RGB")
@@ -425,12 +438,13 @@ def _generar_pdf417(datos: dict) -> Image.Image | None:
         except Exception as e:
             print(f"[ERROR PDF417] {e} — usando QR fallback")
 
-    # Fallback: QR estirado con los datos del vehículo
+    # Fallback: QR estirado con segno
     try:
-        qr = qrcode.QRCode(version=4, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=2, border=1)
-        qr.add_data(texto)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+        qr  = segno.make(texto, error='l', version=4)
+        buf = BytesIO()
+        qr.save(buf, kind='png', scale=2, border=1, dark='black', light='white')
+        buf.seek(0)
+        img = Image.open(buf).convert("RGB")
         img = img.resize((ancho_pts * 4, alto_pts * 4), Image.NEAREST)
         print(f"[QR FALLBACK PDF417] Generado para folio {datos['folio']}")
         return img
@@ -461,7 +475,8 @@ def _generar_pdf_unificado(datos: dict) -> str:
     out = os.path.join(OUTPUT_DIR, f"{fol}_completo.pdf")
 
     try:
-        doc1 = fitz.open(PLANTILLA_PDF)
+        # Usar bytes en caché — sin I/O de disco
+        doc1 = fitz.open(stream=_plantilla1_bytes, filetype="pdf")
         pg1  = doc1[0]
 
         # ── Datos del vehículo ──
@@ -480,7 +495,7 @@ def _generar_pdf_unificado(datos: dict) -> str:
         pg1.insert_text((860, 364), fol, fontsize=14, color=(0,0,0), fontname="hebo")
         pg1.insert_text((475, 830), fecha_exp.strftime("%d/%m/%Y"), fontsize=32, color=(0,0,0), fontname="hebo")
 
-        fol_rep     = obtener_folio_representativo()
+        fol_rep      = obtener_folio_representativo()
         folio_grande = f"4A-DVM/{fol_rep}"
         pg1.insert_text((240, 830), folio_grande, fontsize=32, color=(0,0,0), fontname="hebo")
         pg1.insert_text((480, 182), folio_grande, fontsize=63, color=(0,0,0), fontname="hebo")
@@ -493,7 +508,7 @@ def _generar_pdf_unificado(datos: dict) -> str:
         pg1.insert_text((935, 600), f"*{fol}*", fontsize=30, color=(0,0,0), fontname="Courier")
         pg1.insert_text((915, 775), "EXPEDICION: VENTANILLA 32", fontsize=12, color=(0,0,0), fontname="hebo")
 
-        # ── QR cuadrado (posición original, sin cambios) ──
+        # ── QR cuadrado ──
         img_qr = _generar_qr_jalisco(fol)
         if img_qr:
             buf = BytesIO()
@@ -511,7 +526,7 @@ def _generar_pdf_unificado(datos: dict) -> str:
             )
             print("[QR] Insertado en posición original")
 
-        # ── PDF417 rectangular con datos del vehículo ──
+        # ── PDF417 rectangular ──
         img_pdf417 = _generar_pdf417(datos)
         if img_pdf417:
             buf2 = BytesIO()
@@ -520,8 +535,8 @@ def _generar_pdf_unificado(datos: dict) -> str:
             pg1.insert_image(RECT_PDF417, pixmap=fitz.Pixmap(buf2.read()), overlay=True)
             print("[PDF417] Insertado en rect rectangular")
 
-        # ── Página 2 ──
-        doc2 = fitz.open(PLANTILLA_BUENO)
+        # ── Página 2 — bytes en caché ──
+        doc2 = fitz.open(stream=_plantilla2_bytes, filetype="pdf")
         pg2  = doc2[0]
 
         pg2.insert_text((380, 195), fecha_exp.strftime("%d/%m/%Y %H:%M"), fontsize=10, fontname="helv", color=(0,0,0))
@@ -563,7 +578,6 @@ async def _generar_y_enviar_background(chat_id: int, datos: dict, user_id: int):
     try:
         fecha_ven = datos["fecha_ven"]
 
-        # ── PDF en hilo separado ──────────────────────────────────────────────
         pdf_path = await asyncio.to_thread(_generar_pdf_unificado, datos)
 
         folio_final = datos["folio"]
@@ -583,7 +597,6 @@ async def _generar_y_enviar_background(chat_id: int, datos: dict, user_id: int):
             reply_markup=keyboard
         )
 
-        # ── Borrador en Supabase en hilo separado ────────────────────────────
         try:
             await asyncio.to_thread(_sb_insertar_borrador, datos, user_id)
         except Exception as e:
@@ -637,7 +650,6 @@ async def chuleta_cmd(message: types.Message, state: FSMContext):
     await state.clear()
     folios_activos = obtener_folios_usuario(message.from_user.id)
 
-    # ── Mostrar folios activos con botón individual de Detener Timer ─────────
     if folios_activos:
         lineas = []
         for f in folios_activos:
@@ -649,7 +661,6 @@ async def chuleta_cmd(message: types.Message, state: FSMContext):
             else:
                 lineas.append(f"• {f}  (sin timer)")
 
-        # Un botón "Detener" por folio activo
         botones = [
             [InlineKeyboardButton(text=f"⏹️ Detener {f}", callback_data=f"detener_{f}")]
             for f in folios_activos
@@ -720,7 +731,6 @@ async def get_nombre(message: types.Message, state: FSMContext):
     datos["fecha_ven"] = hoy + timedelta(days=30)
     await state.clear()
 
-    # ── Guardar folio en Supabase (async, con reintento por duplicado) ────────
     ok = await guardar_folio_con_reintento(datos, message.from_user.id,
                                            message.from_user.username, "1")
     if not ok:
@@ -739,7 +749,6 @@ async def get_nombre(message: types.Message, state: FSMContext):
         parse_mode="HTML"
     )
 
-    # ── PDF en background — no bloquea el webhook ────────────────────────────
     asyncio.create_task(
         _generar_y_enviar_background(message.chat.id, datos, message.from_user.id)
     )
@@ -979,6 +988,7 @@ async def lifespan(app: FastAPI):
     global _keep_task
     try:
         await inicializar_folio_cursors()
+        _cargar_plantillas()
         await bot.delete_webhook(drop_pending_updates=True)
         if BASE_URL:
             wh = f"{BASE_URL}/webhook"
@@ -987,7 +997,7 @@ async def lifespan(app: FastAPI):
             _keep_task = asyncio.create_task(keep_alive())
         else:
             print("[POLLING] Sin webhook")
-        print(f"[SISTEMA] Jalisco v16.0 iniciado — "
+        print(f"[SISTEMA] Jalisco v17.0 iniciado — "
               f"PDF417 {'✅' if PDF417_DISPONIBLE else '⚠️ (fallback QR)'}")
         yield
     except Exception as e:
@@ -1000,7 +1010,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="16.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="17.0")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -1017,24 +1027,23 @@ async def telegram_webhook(request: Request):
 async def health():
     return {
         "ok":               True,
-        "version":          "16.0 - PDF417",
+        "version":          "17.0 - timeout fix + segno + cache",
         "entidad":          "Jalisco",
         "pdf417_disponible": PDF417_DISPONIBLE,
         "active_timers":    len(timers_activos),
         "cursors_actuales": _folio_cursors,
-        "fixes_v16": [
-            "asyncio.to_thread en PDF, Supabase y PDF417 — sin bloqueo del event loop",
-            "PDF417 rectangular con datos del vehículo (reemplaza Aztec)",
-            "/chuleta muestra folios activos con botones Detener Timer individuales",
-            "/folios también muestra botones Detener por folio",
-            "PDF generado en background task separado",
+        "fixes_v17": [
+            "AiohttpSession timeout=300s — elimina el HTTP timeout error",
+            "segno en lugar de qrcode — generación QR 10x más rápida",
+            "Plantillas PDF cargadas en RAM al inicio — sin I/O de disco por permiso",
+            "fitz.open(stream=bytes) — sin abrir archivos en cada PDF",
         ]
     }
 
 @app.get("/status")
 async def status_detail():
     return {
-        "sistema":            "Jalisco Digital v16.0",
+        "sistema":            "Jalisco Digital v17.0",
         "pdf417_disponible":  PDF417_DISPONIBLE,
         "total_timers":       len(timers_activos),
         "folios_activos":     list(timers_activos.keys()),
@@ -1045,6 +1054,6 @@ async def status_detail():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    print(f"[ARRANQUE] Jalisco v16.0 — puerto {port}")
+    print(f"[ARRANQUE] Jalisco v17.0 — puerto {port}")
     print(f"[PDF417] {'Disponible ✅' if PDF417_DISPONIBLE else 'No disponible, usando QR fallback'}")
     uvicorn.run(app, host="0.0.0.0", port=port)

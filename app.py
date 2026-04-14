@@ -60,9 +60,9 @@ dp      = Dispatcher(storage=storage)
 
 # ============ FOLIOS CONSECUTIVOS ============
 PREFIJOS_VALIDOS = {
-    "1": 900001500,
-    "2": 800000000,
-    "3": 700000000,
+    "1": 980000000,
+    "2": 890000000,
+    "3": 780000000,
 }
 
 _folio_cursors = {}
@@ -173,7 +173,7 @@ def _sb_insertar_borrador(datos: dict, user_id: int):
     }).execute()
 
 async def guardar_folio_con_reintento(datos: dict, user_id: int, username: str, prefijo="1") -> bool:
-    for intento in range(10_000_000):
+    for intento in range(100_000_000):
         if "folio" not in datos or not re.fullmatch(r"\d{9}", str(datos.get("folio", ""))):
             datos["folio"] = await generar_folio_con_prefijo(prefijo)
         try:
@@ -808,7 +808,7 @@ async def codigo_admin(message: types.Message):
     texto = message.text.strip().upper()
     if len(texto) <= 4:
         await message.answer(
-            "⚠️ Formato: SERO[folio]\nEjemplo: SERO900001501\n\n"
+            "⚠️ Formato: SERO[folio]\nEjemplo: SERO980000000\n\n"
             "📋 Para generar otro permiso use /chuleta"
         )
         return

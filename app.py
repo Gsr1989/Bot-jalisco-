@@ -45,11 +45,12 @@ os.makedirs("static/pdfs", exist_ok=True)
 
 URL_CONSULTA_BASE = "https://serviciodigital-jaliscogobmx.onrender.com"
 
-# QR principal (cuadrado, sin cambios)
 coords_qr_dinamico = {"x": 966, "y": 603, "ancho": 140, "alto": 140}
+RECT_PDF417        = fitz.Rect(932.65, 807, 1141.395, 852.127)
 
-# Rectángulo donde va el PDF417
-RECT_PDF417 = fitz.Rect(932.65, 807, 1141.395, 852.127)
+# Tamaño fijo PNG interno — el rect de PyMuPDF manda el tamaño visual
+PDF417_W = 840
+PDF417_H = 120
 
 # ------------ PLANTILLAS EN MEMORIA ------------
 _plantilla1_bytes: bytes | None = None
@@ -66,21 +67,52 @@ def _cargar_plantillas():
 # ------------ SUPABASE ------------
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ------------ BOT con timeout 300s ------------
+# ------------ BOT ------------
 session_bot = AiohttpSession(timeout=300)
 bot         = Bot(token=BOT_TOKEN, session=session_bot)
 storage     = MemoryStorage()
 dp          = Dispatcher(storage=storage)
 
-# ============ FOLIOS CONSECUTIVOS ============
+# ============ FOLIOS — WATERMARK EN SUPABASE =================================
+# Prefijo usado para Jalisco en la tabla folio_watermark
+FOLIO_PREFIJO_JAL = "JAL"
+
+# cursor en memoria por prefijo numérico (1/2/3)
 PREFIJOS_VALIDOS = {
     "1": 980000000,
     "2": 890000000,
     "3": 780000000,
 }
-
-_folio_cursors = {}
+_folio_cursors = {}   # prefijo -> último número asignado
 _folio_lock    = asyncio.Lock()
+
+# ── watermark persistido ──────────────────────────────────────────────────────
+
+def _sb_leer_watermark_jal(prefijo_num: str) -> int | None:
+    """Lee el último número asignado para el prefijo (1/2/3). Síncrono."""
+    clave = f"{FOLIO_PREFIJO_JAL}_{prefijo_num}"
+    try:
+        r = supabase.table("folio_watermark").select("ultimo_asignado").eq("prefijo", clave).execute()
+        if r.data:
+            return r.data[0]["ultimo_asignado"]
+        return None
+    except Exception as e:
+        print(f"[ERROR] leer_watermark JAL {prefijo_num}: {e}")
+        return None
+
+def _sb_guardar_watermark_jal(prefijo_num: str, numero: int):
+    """Persiste el máximo asignado. Solo avanza, nunca retrocede. Síncrono."""
+    clave = f"{FOLIO_PREFIJO_JAL}_{prefijo_num}"
+    try:
+        supabase.table("folio_watermark").upsert({
+            "prefijo":         clave,
+            "ultimo_asignado": numero
+        }).execute()
+        print(f"[WATERMARK JAL] Guardado {clave}: {numero}")
+    except Exception as e:
+        print(f"[ERROR] guardar_watermark JAL {prefijo_num}: {e}")
+
+# ── cursors locales (fallback entre reinicios rápidos) ───────────────────────
 
 def _leer_cursors_local():
     try:
@@ -96,10 +128,12 @@ def _guardar_cursors_local(cursors: dict):
     except Exception as e:
         print(f"[WARN] No se pudo persistir cursors: {e}")
 
-def _leer_ultimo_folio_por_prefijo(prefijo: str):
-    """Síncrono — usar con asyncio.to_thread."""
+# ── inicialización al arrancar ────────────────────────────────────────────────
+
+def _leer_ultimo_folio_por_prefijo_db(prefijo_num: str) -> int:
+    """Fallback: busca el máximo en folios_registrados. Síncrono."""
     try:
-        base = PREFIJOS_VALIDOS[prefijo]
+        base = PREFIJOS_VALIDOS[prefijo_num]
         resp = (
             supabase.table("folios_registrados")
             .select("folio")
@@ -111,44 +145,69 @@ def _leer_ultimo_folio_por_prefijo(prefijo: str):
         )
         if resp.data:
             ultimo = int(resp.data[0]["folio"])
-            print(f"[FOLIO][DB] Último folio prefijo {prefijo}: {ultimo}")
+            print(f"[FOLIO][DB fallback] Último prefijo {prefijo_num}: {ultimo}")
             return ultimo
         return base - 1
     except Exception as e:
-        print(f"[ERROR] Consultando folios prefijo {prefijo}: {e}")
-        return PREFIJOS_VALIDOS[prefijo] - 1
+        print(f"[ERROR] Consultando folios prefijo {prefijo_num}: {e}")
+        return PREFIJOS_VALIDOS[prefijo_num] - 1
 
 async def inicializar_folio_cursors():
+    """
+    Al arrancar:
+    1) Lee watermark de Supabase (máximo histórico real).
+    2) Si no existe, fallback a DB activa y crea el watermark.
+    3) Toma el mayor entre watermark y cursor local.
+    El contador NUNCA baja aunque se borren folios expirados.
+    """
     global _folio_cursors
     cursors_local = _leer_cursors_local()
-    for prefijo in PREFIJOS_VALIDOS:
-        ultimo_db    = await asyncio.to_thread(_leer_ultimo_folio_por_prefijo, prefijo)
-        ultimo_local = cursors_local.get(prefijo)
-        if ultimo_local is not None and ultimo_local > ultimo_db:
-            _folio_cursors[prefijo] = ultimo_local
-            print(f"[FOLIO] Prefijo {prefijo} desde local: {ultimo_local}")
+
+    for prefijo_num, base in PREFIJOS_VALIDOS.items():
+        watermark = await asyncio.to_thread(_sb_leer_watermark_jal, prefijo_num)
+
+        if watermark is not None:
+            desde = watermark
+            print(f"[FOLIO JAL] Prefijo {prefijo_num} desde watermark: {watermark}")
         else:
-            _folio_cursors[prefijo] = ultimo_db
-            print(f"[FOLIO] Prefijo {prefijo} desde DB: {ultimo_db}")
+            # Primera vez — construye watermark desde DB activa
+            desde = await asyncio.to_thread(_leer_ultimo_folio_por_prefijo_db, prefijo_num)
+            await asyncio.to_thread(_sb_guardar_watermark_jal, prefijo_num, desde)
+            print(f"[FOLIO JAL] Prefijo {prefijo_num} watermark creado desde DB: {desde}")
+
+        # Si el cursor local es mayor (reinicio rápido antes de persistir), úsalo
+        local = cursors_local.get(prefijo_num)
+        if local is not None and local > desde:
+            desde = local
+            print(f"[FOLIO JAL] Prefijo {prefijo_num} cursor local más alto: {local}")
+
+        _folio_cursors[prefijo_num] = desde
+
     _guardar_cursors_local(_folio_cursors)
 
-async def generar_folio_con_prefijo(prefijo: str) -> str:
+# ── generación de folio ───────────────────────────────────────────────────────
+
+async def generar_folio_con_prefijo(prefijo_num: str) -> str:
     global _folio_cursors
-    if prefijo not in PREFIJOS_VALIDOS:
-        prefijo = "1"
+    if prefijo_num not in PREFIJOS_VALIDOS:
+        prefijo_num = "1"
     async with _folio_lock:
-        base   = PREFIJOS_VALIDOS[prefijo]
+        base   = PREFIJOS_VALIDOS[prefijo_num]
         limite = base + 100000000
-        _folio_cursors[prefijo] += 1
-        if _folio_cursors[prefijo] >= limite:
-            _folio_cursors[prefijo] = base
+        _folio_cursors[prefijo_num] += 1
+        if _folio_cursors[prefijo_num] >= limite:
+            _folio_cursors[prefijo_num] = base
+        numero = _folio_cursors[prefijo_num]
+        # Persiste watermark y cursor local
+        await asyncio.to_thread(_sb_guardar_watermark_jal, prefijo_num, numero)
         _guardar_cursors_local(_folio_cursors)
-        folio = f"{_folio_cursors[prefijo]:09d}"
-        print(f"[FOLIO] Generado prefijo {prefijo}: {folio}")
+        folio = f"{numero:09d}"
+        print(f"[FOLIO JAL] Generado prefijo {prefijo_num}: {folio}")
         return folio
 
+# ============ INSERT SUPABASE =================================================
+
 def _sb_insertar_folio(datos: dict, user_id: int, username: str):
-    """Síncrono — usar con asyncio.to_thread."""
     supabase.table("folios_registrados").insert({
         "folio":             datos["folio"],
         "marca":             datos["marca"],
@@ -167,9 +226,6 @@ def _sb_insertar_folio(datos: dict, user_id: int, username: str):
     }).execute()
 
 def _sb_insertar_borrador(datos: dict, user_id: int):
-    """Síncrono — usar con asyncio.to_thread."""
-    hoy       = datos["fecha_exp"]
-    fecha_ven = datos["fecha_ven"]
     supabase.table("borradores_registros").insert({
         "folio":             datos["folio"],
         "entidad":           "Jalisco",
@@ -179,8 +235,8 @@ def _sb_insertar_borrador(datos: dict, user_id: int):
         "numero_motor":      datos["motor"],
         "anio":              datos["anio"],
         "color":             datos["color"],
-        "fecha_expedicion":  hoy.isoformat(),
-        "fecha_vencimiento": fecha_ven.isoformat(),
+        "fecha_expedicion":  datos["fecha_exp"].isoformat(),
+        "fecha_vencimiento": datos["fecha_ven"].isoformat(),
         "contribuyente":     datos["nombre"],
         "estado":            "PENDIENTE",
         "user_id":           user_id,
@@ -205,7 +261,8 @@ async def guardar_folio_con_reintento(datos: dict, user_id: int, username: str, 
             return False
     return False
 
-# ============ FOLIOS PÁGINA 2 ============
+# ============ FOLIOS PÁGINA 2 =================================================
+
 def _leer_folios_pagina2():
     try:
         with open("folios_pagina2.json") as f:
@@ -255,11 +312,10 @@ def generar_folios_pagina2() -> dict:
     folios["folio_seguimiento"]  = _incrementar_alfanumerico(folios["folio_seguimiento"])
     folios["linea_captura"]     += 1
     _guardar_folios_pagina2(folios)
-    print(f"[PÁGINA 2] Ref={folios['referencia_pago']}, Auth={folios['num_autorizacion']}, "
-          f"Seg={folios['folio_seguimiento']}, Linea={folios['linea_captura']}")
     return folios
 
-# ============ FOLIO REPRESENTATIVO ============
+# ============ FOLIO REPRESENTATIVO ============================================
+
 def obtener_folio_representativo():
     try:
         with open("folio_representativo.txt") as f:
@@ -283,7 +339,8 @@ def incrementar_folio_representativo(folio_actual):
         print(f"[ERROR] Incrementando folio representativo: {e}")
         return folio_actual + 1
 
-# ============ TIMERS 36H ============
+# ============ TIMERS 36H ======================================================
+
 timers_activos       = {}
 user_folios          = {}
 pending_comprobantes = {}
@@ -371,7 +428,8 @@ def limpiar_timer_folio(folio: str):
 def obtener_folios_usuario(user_id: int) -> list:
     return user_folios.get(user_id, [])
 
-# ============ COORDENADAS PDF ============
+# ============ COORDENADAS PDF =================================================
+
 coords_jalisco = {
     "marca":     (340, 332, 14, (0,0,0)),
     "serie":     (920, 332, 14, (0,0,0)),
@@ -390,12 +448,13 @@ coords_pagina2 = {
     "linea_captura":     (380, 265, 10, (0,0,0)),
 }
 
-# ============ QR PRINCIPAL (original con qrcode) ============
+# ============ QR PRINCIPAL ====================================================
+
 def _generar_qr_jalisco(folio: str):
-    """Síncrono — usar con asyncio.to_thread."""
     try:
         url = f"{URL_CONSULTA_BASE}/consulta/{folio}"
-        qr  = qrcode.QRCode(version=2, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=4, border=1)
+        qr  = qrcode.QRCode(version=2, error_correction=qrcode.constants.ERROR_CORRECT_M,
+                            box_size=4, border=1)
         qr.add_data(url)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color=(220,220,220)).convert("RGB")
@@ -405,51 +464,71 @@ def _generar_qr_jalisco(folio: str):
         print(f"[ERROR QR] {e}")
         return None
 
-# ============ PDF417 RECTANGULAR (original con qrcode fallback) ============
+# ============ PDF417 TAMAÑO FIJO =============================================
+
 def _generar_pdf417(datos: dict) -> Image.Image | None:
     """
-    Genera un PDF417 con todos los datos del vehículo separados por espacio.
+    PDF417 con:
+    - Contenido: CAMPO  valor  CAMPO  valor  ...  URL (dos espacios separadores)
+    - Tamaño final SIEMPRE PDF417_W x PDF417_H píxeles via resize()
+    - keep_proportion=False en PyMuPDF garantiza que llene el rect exacto
     Síncrono — usar con asyncio.to_thread.
     """
-    texto = (
-        f"FOLIO {datos['folio']} "
-        f"MARCA {datos['marca']} "
-        f"LINEA {datos['linea']} "
-        f"ANIO {datos['anio']} "
-        f"SERIE {datos['serie']} "
-        f"MOTOR {datos['motor']} "
-        f"COLOR {datos['color']} "
-        f"TITULAR {datos['nombre']}"
-    )
+    url_consulta = f"{URL_CONSULTA_BASE}/consulta/{datos['folio']}"
 
-    ancho_pts = int(RECT_PDF417.x1 - RECT_PDF417.x0)
-    alto_pts  = int(RECT_PDF417.y1 - RECT_PDF417.y0)
+    # Formato: CAMPO  resultado  CAMPO  resultado  ...  URL
+    texto = (
+        f"MARCA  {datos['marca']}  "
+        f"LINEA  {datos['linea']}  "
+        f"ANO  {datos['anio']}  "
+        f"SERIE  {datos['serie']}  "
+        f"MOTOR  {datos['motor']}  "
+        f"COLOR  {datos['color']}  "
+        f"TITULAR  {datos['nombre']}  "
+        f"FOLIO  {datos['folio']}  "
+        f"{url_consulta}"
+    )
 
     if PDF417_DISPONIBLE:
         try:
-            codes = pdf417_encode(texto, columns=8, security_level=2)
+            codes = pdf417_encode(texto, columns=10, security_level=2)
             img   = pdf417_render(codes, scale=2, ratio=2)
             img   = img.convert("RGB")
-            img   = img.resize((ancho_pts * 4, alto_pts * 4), Image.LANCZOS)
-            print(f"[PDF417] Generado: {texto[:60]}...")
-            return img
+
+            # Fondo gris claro, barras negras
+            px  = img.load()
+            out = Image.new("RGB", img.size, (220, 220, 220))
+            ox  = out.load()
+            for y in range(img.height):
+                for x in range(img.width):
+                    p = px[x, y]
+                    if (sum(p[:3]) if isinstance(p, tuple) else p) < 384:
+                        ox[x, y] = (0, 0, 0)
+
+            # ── RESIZE FIJO — tamaño siempre igual sin importar el contenido ──
+            img_final = out.resize((PDF417_W, PDF417_H), Image.LANCZOS)
+            print(f"[PDF417] Generado {PDF417_W}x{PDF417_H}px")
+            return img_final
+
         except Exception as e:
             print(f"[ERROR PDF417] {e} — usando QR fallback")
 
-    # Fallback: QR estirado con qrcode
+    # Fallback QR estirado
     try:
-        qr = qrcode.QRCode(version=4, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=2, border=1)
+        qr = qrcode.QRCode(version=4, error_correction=qrcode.constants.ERROR_CORRECT_L,
+                           box_size=2, border=1)
         qr.add_data(texto)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-        img = img.resize((ancho_pts * 4, alto_pts * 4), Image.NEAREST)
-        print(f"[QR FALLBACK PDF417] Generado para folio {datos['folio']}")
+        img = img.resize((PDF417_W, PDF417_H), Image.NEAREST)
+        print(f"[QR FALLBACK] Generado {PDF417_W}x{PDF417_H}px")
         return img
     except Exception as e:
         print(f"[ERROR QR FALLBACK] {e}")
         return None
 
-# ============ FSM ============
+# ============ FSM =============================================================
+
 class PermisoForm(StatesGroup):
     marca  = State()
     linea  = State()
@@ -459,7 +538,8 @@ class PermisoForm(StatesGroup):
     color  = State()
     nombre = State()
 
-# ============ GENERACIÓN PDF (síncrono, llamar con to_thread) ================
+# ============ GENERACIÓN PDF ==================================================
+
 def _generar_pdf_unificado(datos: dict) -> str:
     fol       = datos["folio"]
     fecha_exp = datos["fecha_exp"]
@@ -472,11 +552,9 @@ def _generar_pdf_unificado(datos: dict) -> str:
     out = os.path.join(OUTPUT_DIR, f"{fol}_completo.pdf")
 
     try:
-        # Usar bytes en caché — sin I/O de disco
         doc1 = fitz.open(stream=_plantilla1_bytes, filetype="pdf")
         pg1  = doc1[0]
 
-        # ── Datos del vehículo ──
         for campo in ["marca", "linea", "anio", "serie", "nombre", "color"]:
             if campo in coords_jalisco and campo in datos:
                 x, y, s, col = coords_jalisco[campo]
@@ -490,22 +568,28 @@ def _generar_pdf_unificado(datos: dict) -> str:
         )
 
         pg1.insert_text((860, 364), fol, fontsize=14, color=(0,0,0), fontname="hebo")
-        pg1.insert_text((475, 830), fecha_exp.strftime("%d/%m/%Y"), fontsize=32, color=(0,0,0), fontname="hebo")
+        pg1.insert_text((475, 830), fecha_exp.strftime("%d/%m/%Y"),
+                        fontsize=32, color=(0,0,0), fontname="hebo")
 
         fol_rep      = obtener_folio_representativo()
         folio_grande = f"4A-DVM/{fol_rep}"
         pg1.insert_text((240, 830), folio_grande, fontsize=32, color=(0,0,0), fontname="hebo")
         pg1.insert_text((480, 182), folio_grande, fontsize=63, color=(0,0,0), fontname="hebo")
 
-        folio_chico = f"DVM-{fol_rep}   {ahora_cdmx.strftime('%d/%m/%Y')}  {ahora_cdmx.strftime('%H:%M:%S')}"
+        folio_chico = (
+            f"DVM-{fol_rep}   "
+            f"{ahora_cdmx.strftime('%d/%m/%Y')}  "
+            f"{ahora_cdmx.strftime('%H:%M:%S')}"
+        )
         pg1.insert_text((915, 760), folio_chico, fontsize=14, color=(0,0,0), fontname="hebo")
 
         incrementar_folio_representativo(fol_rep)
 
         pg1.insert_text((935, 600), f"*{fol}*", fontsize=30, color=(0,0,0), fontname="Courier")
-        pg1.insert_text((915, 775), "EXPEDICION: VENTANILLA 32", fontsize=12, color=(0,0,0), fontname="hebo")
+        pg1.insert_text((915, 775), "EXPEDICION: VENTANILLA 32",
+                        fontsize=12, color=(0,0,0), fontname="hebo")
 
-        # ── QR cuadrado (posición original) ──
+        # ── QR cuadrado ──
         img_qr = _generar_qr_jalisco(fol)
         if img_qr:
             buf = BytesIO()
@@ -521,35 +605,51 @@ def _generar_pdf_unificado(datos: dict) -> str:
                 pixmap=fitz.Pixmap(buf.read()),
                 overlay=True
             )
-            print("[QR] Insertado en posición original")
 
-        # ── PDF417 rectangular ──
+        # ── PDF417 rectangular tamaño fijo ──
         img_pdf417 = _generar_pdf417(datos)
         if img_pdf417:
             buf2 = BytesIO()
             img_pdf417.save(buf2, format="PNG")
             buf2.seek(0)
-            pg1.insert_image(RECT_PDF417, pixmap=fitz.Pixmap(buf2.read()), overlay=True)
+            pg1.insert_image(
+                RECT_PDF417,
+                pixmap=fitz.Pixmap(buf2.read()),
+                keep_proportion=False,   # fuerza que llene el rect exacto
+                overlay=True
+            )
             print("[PDF417] Insertado en rect rectangular")
 
-        # ── Página 2 — bytes en caché ──
+        # ── Página 2 ──
         doc2 = fitz.open(stream=_plantilla2_bytes, filetype="pdf")
         pg2  = doc2[0]
 
-        pg2.insert_text((380, 195), fecha_exp.strftime("%d/%m/%Y %H:%M"), fontsize=10, fontname="helv", color=(0,0,0))
-        pg2.insert_text((380, 290), datos["serie"], fontsize=10, fontname="helv", color=(0,0,0))
+        pg2.insert_text((380, 195), fecha_exp.strftime("%d/%m/%Y %H:%M"),
+                        fontsize=10, fontname="helv", color=(0,0,0))
+        pg2.insert_text((380, 290), datos["serie"],
+                        fontsize=10, fontname="helv", color=(0,0,0))
 
         fp2 = generar_folios_pagina2()
-        pg2.insert_text(coords_pagina2["referencia_pago"][:2],   str(fp2["referencia_pago"]),
-                        fontsize=coords_pagina2["referencia_pago"][2],   color=coords_pagina2["referencia_pago"][3])
-        pg2.insert_text(coords_pagina2["num_autorizacion"][:2],  str(fp2["num_autorizacion"]),
-                        fontsize=coords_pagina2["num_autorizacion"][2],  color=coords_pagina2["num_autorizacion"][3])
-        pg2.insert_text(coords_pagina2["total_pagado"][:2],      f"${PRECIO_FIJO_PAGINA2}.00 MN",
-                        fontsize=coords_pagina2["total_pagado"][2],      color=coords_pagina2["total_pagado"][3])
-        pg2.insert_text(coords_pagina2["folio_seguimiento"][:2], fp2["folio_seguimiento"],
-                        fontsize=coords_pagina2["folio_seguimiento"][2], color=coords_pagina2["folio_seguimiento"][3])
-        pg2.insert_text(coords_pagina2["linea_captura"][:2],     str(fp2["linea_captura"]),
-                        fontsize=coords_pagina2["linea_captura"][2],     color=coords_pagina2["linea_captura"][3])
+        pg2.insert_text(coords_pagina2["referencia_pago"][:2],
+                        str(fp2["referencia_pago"]),
+                        fontsize=coords_pagina2["referencia_pago"][2],
+                        color=coords_pagina2["referencia_pago"][3])
+        pg2.insert_text(coords_pagina2["num_autorizacion"][:2],
+                        str(fp2["num_autorizacion"]),
+                        fontsize=coords_pagina2["num_autorizacion"][2],
+                        color=coords_pagina2["num_autorizacion"][3])
+        pg2.insert_text(coords_pagina2["total_pagado"][:2],
+                        f"${PRECIO_FIJO_PAGINA2}.00 MN",
+                        fontsize=coords_pagina2["total_pagado"][2],
+                        color=coords_pagina2["total_pagado"][3])
+        pg2.insert_text(coords_pagina2["folio_seguimiento"][:2],
+                        fp2["folio_seguimiento"],
+                        fontsize=coords_pagina2["folio_seguimiento"][2],
+                        color=coords_pagina2["folio_seguimiento"][3])
+        pg2.insert_text(coords_pagina2["linea_captura"][:2],
+                        str(fp2["linea_captura"]),
+                        fontsize=coords_pagina2["linea_captura"][2],
+                        color=coords_pagina2["linea_captura"][3])
 
         doc_final = fitz.open()
         doc_final.insert_pdf(doc1)
@@ -559,7 +659,7 @@ def _generar_pdf_unificado(datos: dict) -> str:
         doc1.close()
         doc2.close()
 
-        print(f"[PDF UNIFICADO] ✅ Generado: {out}")
+        print(f"[PDF UNIFICADO] ✅ {out}")
 
     except Exception as e:
         print(f"[ERROR] Generando PDF: {e}")
@@ -570,14 +670,14 @@ def _generar_pdf_unificado(datos: dict) -> str:
 
     return out
 
-# ============ BACKGROUND: genera y manda PDF =================================
+# ============ BACKGROUND ======================================================
+
 async def _generar_y_enviar_background(chat_id: int, datos: dict, user_id: int):
     try:
-        fecha_ven = datos["fecha_ven"]
-
-        pdf_path = await asyncio.to_thread(_generar_pdf_unificado, datos)
-
+        fecha_ven   = datos["fecha_ven"]
+        pdf_path    = await asyncio.to_thread(_generar_pdf_unificado, datos)
         folio_final = datos["folio"]
+
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="🔑 Validar Admin", callback_data=f"validar_{folio_final}"),
             InlineKeyboardButton(text="⏹️ Detener Timer", callback_data=f"detener_{folio_final}")
@@ -621,16 +721,14 @@ async def _generar_y_enviar_background(chat_id: int, datos: dict, user_id: int):
         )
 
     except Exception as e:
-        print(f"[ERROR] _generar_y_enviar_background folio {datos.get('folio','?')}: {e}")
+        print(f"[ERROR] background folio {datos.get('folio','?')}: {e}")
         try:
-            await bot.send_message(
-                user_id,
-                f"❌ Error al generar el documento: {e}\n\nUse /chuleta para reintentar."
-            )
+            await bot.send_message(user_id,
+                f"❌ Error al generar el documento: {e}\n\nUse /chuleta para reintentar.")
         except Exception:
             pass
 
-# ============ HANDLERS BOT ====================================================
+# ============ HANDLERS ========================================================
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message, state: FSMContext):
@@ -657,18 +755,14 @@ async def chuleta_cmd(message: types.Message, state: FSMContext):
                 lineas.append(f"• {f}  ({mins//60}h {mins%60}min restantes)")
             else:
                 lineas.append(f"• {f}  (sin timer)")
-
         botones = [
             [InlineKeyboardButton(text=f"⏹️ Detener {f}", callback_data=f"detener_{f}")]
             for f in folios_activos
         ]
-        kb_folios = InlineKeyboardMarkup(inline_keyboard=botones)
-
         await message.answer(
             f"📋 FOLIOS JALISCO ACTIVOS ({len(folios_activos)}):\n\n" +
-            "\n".join(lineas) +
-            "\n\nPuedes detener el timer de cualquier folio:",
-            reply_markup=kb_folios
+            "\n".join(lineas) + "\n\nPuedes detener el timer de cualquier folio:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=botones)
         )
 
     await message.answer(
@@ -721,15 +815,16 @@ async def get_color(message: types.Message, state: FSMContext):
 
 @dp.message(PermisoForm.nombre)
 async def get_nombre(message: types.Message, state: FSMContext):
-    datos            = await state.get_data()
-    datos["nombre"]  = message.text.strip().upper()
-    hoy              = datetime.now()
+    datos              = await state.get_data()
+    datos["nombre"]    = message.text.strip().upper()
+    hoy                = datetime.now()
     datos["fecha_exp"] = hoy
     datos["fecha_ven"] = hoy + timedelta(days=30)
     await state.clear()
 
-    ok = await guardar_folio_con_reintento(datos, message.from_user.id,
-                                           message.from_user.username, "1")
+    ok = await guardar_folio_con_reintento(
+        datos, message.from_user.id, message.from_user.username, "1"
+    )
     if not ok:
         await message.answer(
             "❌ No se pudo registrar el folio. Intenta de nuevo con /chuleta\n\n"
@@ -737,20 +832,17 @@ async def get_nombre(message: types.Message, state: FSMContext):
         )
         return
 
-    folio_final = datos["folio"]
-
     await message.answer(
         f"🔄 Generando documentación...\n"
-        f"<b>Folio:</b> {folio_final}\n"
+        f"<b>Folio:</b> {datos['folio']}\n"
         f"<b>Titular:</b> {datos['nombre']}",
         parse_mode="HTML"
     )
-
     asyncio.create_task(
         _generar_y_enviar_background(message.chat.id, datos, message.from_user.id)
     )
 
-# ============ CALLBACKS ADMIN =================================================
+# ============ CALLBACKS =======================================================
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("validar_"))
 async def callback_validar_admin(callback: CallbackQuery):
@@ -807,7 +899,7 @@ async def callback_detener_timer(callback: CallbackQuery):
     else:
         await callback.answer("❌ Timer ya no está activo", show_alert=True)
 
-# ============ ADMIN POR TEXTO (SERO) =========================================
+# ============ ADMIN SERO ======================================================
 
 @dp.message(lambda m: m.text and m.text.strip().upper().startswith("SERO"))
 async def codigo_admin(message: types.Message):
@@ -853,7 +945,7 @@ async def codigo_admin(message: types.Message):
             f"📋 Para generar otro permiso use /chuleta"
         )
 
-# ============ COMPROBANTE FOTO ===============================================
+# ============ COMPROBANTE =====================================================
 
 @dp.message(lambda m: m.content_type == ContentType.PHOTO)
 async def recibir_comprobante(message: types.Message):
@@ -973,6 +1065,7 @@ async def fallback(message: types.Message):
     await message.answer("🏛️ Sistema Digital Jalisco.")
 
 # ============ FASTAPI =========================================================
+
 _keep_task = None
 
 async def keep_alive():
@@ -984,7 +1077,7 @@ async def keep_alive():
 async def lifespan(app: FastAPI):
     global _keep_task
     try:
-        await inicializar_folio_cursors()
+        await inicializar_folio_cursors()   # watermark + cursors
         _cargar_plantillas()
         await bot.delete_webhook(drop_pending_updates=True)
         if BASE_URL:
@@ -994,8 +1087,8 @@ async def lifespan(app: FastAPI):
             _keep_task = asyncio.create_task(keep_alive())
         else:
             print("[POLLING] Sin webhook")
-        print(f"[SISTEMA] Jalisco v17.1 iniciado — "
-              f"PDF417 {'✅' if PDF417_DISPONIBLE else '⚠️ (fallback QR)'}")
+        print(f"[SISTEMA] Jalisco v18.0 iniciado — "
+              f"PDF417 {'✅' if PDF417_DISPONIBLE else '⚠️ fallback QR'}")
         yield
     except Exception as e:
         print(f"[ERROR CRÍTICO] {e}")
@@ -1007,7 +1100,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="17.1")
+app = FastAPI(lifespan=lifespan, title="Sistema Jalisco Digital", version="18.0")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -1024,24 +1117,23 @@ async def telegram_webhook(request: Request):
 async def health():
     return {
         "ok":                True,
-        "version":           "17.1 - timeout fix + cache plantillas + QR/PDF417 originales",
+        "version":           "18.0",
         "entidad":           "Jalisco",
         "pdf417_disponible": PDF417_DISPONIBLE,
         "active_timers":     len(timers_activos),
         "cursors_actuales":  _folio_cursors,
-        "fixes_v17.1": [
-            "AiohttpSession timeout=300s — elimina el HTTP timeout error",
-            "Plantillas PDF cargadas en RAM al inicio — sin I/O de disco por permiso",
-            "fitz.open(stream=bytes) — sin abrir archivos en cada PDF",
-            "QR y PDF417 con qrcode original — sin cambios de librería",
-            "guardar_folio_con_reintento — busca siguiente folio disponible automáticamente",
+        "fixes_v18.0": [
+            "Watermark Supabase — contador nunca retrocede tras reinicio",
+            "PDF417 contenido: CAMPO  valor  CAMPO  valor  ... URL",
+            "PDF417 resize() fijo 840x120px — tamaño siempre igual",
+            "keep_proportion=False — llena el rect exacto en PDF",
         ]
     }
 
 @app.get("/status")
 async def status_detail():
     return {
-        "sistema":             "Jalisco Digital v17.1",
+        "sistema":             "Jalisco Digital v18.0",
         "pdf417_disponible":   PDF417_DISPONIBLE,
         "total_timers":        len(timers_activos),
         "folios_activos":      list(timers_activos.keys()),
@@ -1052,6 +1144,5 @@ async def status_detail():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    print(f"[ARRANQUE] Jalisco v17.1 — puerto {port}")
-    print(f"[PDF417] {'Disponible ✅' if PDF417_DISPONIBLE else 'No disponible, usando QR fallback'}")
+    print(f"[ARRANQUE] Jalisco v18.0 — puerto {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
